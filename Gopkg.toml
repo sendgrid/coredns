@@ -1,8 +1,8 @@
 ignored = [
-    "github.com/caddyserver/caddy",
-    "github.com/caddyserver/caddy/caddyfile",
-    "github.com/caddyserver/caddy/startupshutdown",
-    "github.com/caddyserver/caddy/onevent",
+    "github.com/mholt/caddy",
+    "github.com/mholt/caddy/caddyfile",
+    "github.com/mholt/caddy/startupshutdown",
+    "github.com/mholt/caddy/onevent",
     "github.com/miekg/dns",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
