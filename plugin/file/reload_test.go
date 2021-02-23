@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coredns/coredns/plugin/test"
+	"github.com/coredns/coredns/plugin/transfer"
 	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
@@ -28,36 +30,44 @@ func TestZoneReload(t *testing.T) {
 		t.Fatalf("Failed to parse zone: %s", err)
 	}
 
-	TickTime = 500 * time.Millisecond
-	z.ReloadInterval = 500 * time.Millisecond
-	z.Reload()
-	time.Sleep(time.Second)
+	z.ReloadInterval = 10 * time.Millisecond
+	z.Reload(&transfer.Transfer{})
+	time.Sleep(20 * time.Millisecond)
 
+	ctx := context.TODO()
 	r := new(dns.Msg)
 	r.SetQuestion("miek.nl", dns.TypeSOA)
 	state := request.Request{W: &test.ResponseWriter{}, Req: r}
-	if _, _, _, res := z.Lookup(state, "miek.nl."); res != Success {
+	if _, _, _, res := z.Lookup(ctx, state, "miek.nl."); res != Success {
 		t.Fatalf("Failed to lookup, got %d", res)
 	}
 
 	r = new(dns.Msg)
 	r.SetQuestion("miek.nl", dns.TypeNS)
 	state = request.Request{W: &test.ResponseWriter{}, Req: r}
-	if _, _, _, res := z.Lookup(state, "miek.nl."); res != Success {
+	if _, _, _, res := z.Lookup(ctx, state, "miek.nl."); res != Success {
 		t.Fatalf("Failed to lookup, got %d", res)
 	}
 
-	if len(z.All()) != 5 {
-		t.Fatalf("Expected 5 RRs, got %d", len(z.All()))
+	rrs, err := z.ApexIfDefined() // all apex records.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rrs) != 5 {
+		t.Fatalf("Expected 5 RRs, got %d", len(rrs))
 	}
 	if err := ioutil.WriteFile(fileName, []byte(reloadZone2Test), 0644); err != nil {
 		t.Fatalf("Failed to write new zone data: %s", err)
 	}
 	// Could still be racy, but we need to wait a bit for the event to be seen
-	time.Sleep(1 * time.Second)
+	time.Sleep(30 * time.Millisecond)
 
-	if len(z.All()) != 3 {
-		t.Fatalf("Expected 3 RRs, got %d", len(z.All()))
+	rrs, err = z.ApexIfDefined()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rrs) != 3 {
+		t.Fatalf("Expected 3 RRs, got %d", len(rrs))
 	}
 }
 
@@ -66,7 +76,6 @@ func TestZoneReloadSOAChange(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Zone should not have been re-parsed")
 	}
-
 }
 
 const reloadZoneTest = `miek.nl.		1627	IN	SOA	linode.atoom.net. miek.miek.nl. 1460175181 14400 3600 604800 14400

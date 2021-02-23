@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mholt/caddy"
+	"github.com/coredns/caddy"
 )
 
 func TestSetup(t *testing.T) {

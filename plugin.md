@@ -8,7 +8,7 @@ The main method that gets called is `ServeDNS`. It has three parameters:
 * `dns.ResponseWriter` that is, basically, the client's connection;
 * `*dns.Msg` the request from the client.
 
-`ServeDNS` returns two values, a response code and an error. If the error is not nil CoreDNS,
+`ServeDNS` returns two values, a response code and an error. If the error is not nil, CoreDNS
 will return a SERVFAIL to the client. The response code tells CoreDNS if a *reply has been
 written by the plugin chain or not*. In the latter case CoreDNS will take care of that.
 
@@ -31,7 +31,7 @@ code.
 See a couple of blog posts on how to write and add plugin to CoreDNS:
 
 * <https://blog.coredns.io/2017/03/01/how-to-add-plugins-to-coredns/>
-* <https://blog.coredns.io/2016/12/19/writing-plugin-for-coredns/>, slightly older, but useful.
+* <https://blog.coredns.io/2016/12/19/writing-plugins-for-coredns/>, slightly older, but useful.
 
 ## Logging
 
@@ -56,9 +56,27 @@ server.
 ## Metrics
 
 When exporting metrics the *Namespace* should be `plugin.Namespace` (="coredns"), and the
-*Subsystem* should be the name of the plugin. The README.md for the plugin should then also contain
- a *Metrics* section detailing the metrics. If the plugin supports dynamic health reporting it
- should also have *Health* section detailing on some of its inner workings.
+*Subsystem* must be the name of the plugin. The README.md for the plugin should then also contain
+a *Metrics* section detailing the metrics.
+
+## Readiness
+
+If the plugin supports signalling readiness it should have a *Ready* section detailing how it
+works, and implement the `ready.Readiness` interface.
+
+## Opening Sockets
+
+See the plugin/pkg/reuseport for `Listen` and `ListenPacket` functions. Using these functions makes
+your plugin handle reload events better.
+
+## Context
+
+Every request get a context.Context these are pre-filled with 2 values:
+
+* `Key`: holds a pointer to the current server, this can be useful for logging or metrics. It is
+  infact used in the *metrics* plugin to tie a request to a specific (internal) server.
+* `LoopKey`: holds an integer to detect loops within the current context. The *file* plugin uses
+  this to detect loops when resolving CNAMEs.
 
 ## Documentation
 
@@ -66,7 +84,7 @@ Each plugin should have a README.md explaining what the plugin does and how it i
 file should have the following layout:
 
 * Title: use the plugin's name
-* Subsection titled: "Named"
+* Subsection titled: "Name"
     with *PLUGIN* - one line description.
 * Subsection titled: "Description" has a longer description.
 * Subsection titled: "Syntax", syntax and supported directives.
@@ -106,21 +124,33 @@ entire domain and all sub domains.
 In this example the *file* plugin is handling all names below (and including) `example.org`. If
 a query comes in that is not a subdomain (or equal to) `example.org` the next plugin is called.
 
-Now, the world isn't perfect, and there are good reasons to "fallthrough" to the next middlware,
-meaning a plugin is only responsible for a *subset* of names within the zone. The first of these
-to appear was the *reverse* plugin that synthesis PTR and A/AAAA responses (useful with IPv6).
-
-The nature of the *reverse* plugin is such that it only deals with A,AAAA and PTR and then only
-for a subset of the names. Ideally you would want to layer *reverse* **in front off** another
-plugin such as *file* or *auto* (or even *proxy*). This means *reverse* handles some special
-reverse cases and **all other** request are handled by the backing plugin. This is exactly what
-"fallthrough" does. To keep things explicit we've opted that plugins implement such behavior
-should implement a `fallthrough` keyword.
+Now, the world isn't perfect, and there are may be reasons to "fallthrough" to the next plugin,
+meaning a plugin is only responsible for a *subset* of names within the zone.
 
 The `fallthrough` directive should optionally accept a list of zones. Only queries for records
-in one of those zones should be allowed to fallthrough.
+in one of those zones should be allowed to fallthrough. See `plugin/pkg/fallthrough` for the
+implementation.
 
-## Qualifying for main repo
+## Mutating a Response
+
+Using a custom `ResponseWriter`, a plugin can mutate a response when another plugin further down the chain writes the response to the client.
+If a plugin mutates a response it MUST make a copy of the entire response before doing so. A
+response is a pointer to a `dns.Msg` and as such you will be manipulating the original response,
+which could have been generated from a data store. E.g. the *file* plugin creates a response that
+the *rewrite* plugin then rewrites; not copying the data, means it's **also** mutating the data of
+the *file*'s data store. A response can be copied by using the `Copy()` method.
+
+## General Guidelines
+
+Some general guidelines:
+
+* logging time duration should be done in seconds (call the `Seconds()` method on any duration).
+* keep logging to a minimum.
+* call the main config parse function just `parse`.
+* try to minimize the number of knobs in the configuration.
+* use `plugin.Error()` to wrap errors returned from the `setup` function.
+
+## Qualifying for Main Repo
 
 Plugins for CoreDNS can live out-of-tree, `plugin.cfg` defaults to CoreDNS' repo but other
 repos work just as well. So when do we consider the inclusion of a new plugin in the main repo?

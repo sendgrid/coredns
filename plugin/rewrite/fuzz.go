@@ -1,11 +1,10 @@
-// +build fuzz
+// +build gofuzz
 
 package rewrite
 
 import (
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/plugin/pkg/fuzz"
-
-	"github.com/mholt/caddy"
 )
 
 // Fuzz fuzzes rewrite.

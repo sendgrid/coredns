@@ -6,7 +6,14 @@
 //
 // Basic example:
 //
-// Implement the Provider interface for a plugin:
+// Implement the Provider interface for a plugin p:
+//
+//    func (p P) Metadata(ctx context.Context, state request.Request) context.Context {
+//       metadata.SetValueFunc(ctx, "test/something", func() string { return "myvalue" })
+//	 return ctx
+//    }
+//
+// Basic example with caching:
 //
 //    func (p P) Metadata(ctx context.Context, state request.Request) context.Context {
 //       cached := ""
@@ -21,7 +28,7 @@
 //	 return ctx
 //    }
 //
-// Check the metadata from another plugin:
+// If you need access to this metadata from another plugin:
 //
 //    // ...
 //    valueFunc := metadata.ValueFunc(ctx, "test/something")
@@ -70,6 +77,16 @@ func Labels(ctx context.Context) []string {
 	if metadata := ctx.Value(key{}); metadata != nil {
 		if m, ok := metadata.(md); ok {
 			return keys(m)
+		}
+	}
+	return nil
+}
+
+// ValueFuncs returns the map[string]Func from the context, or nil if it does not exist.
+func ValueFuncs(ctx context.Context) map[string]Func {
+	if metadata := ctx.Value(key{}); metadata != nil {
+		if m, ok := metadata.(md); ok {
+			return m
 		}
 	}
 	return nil

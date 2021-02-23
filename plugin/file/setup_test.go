@@ -2,10 +2,10 @@ package file
 
 import (
 	"testing"
+	"time"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/plugin/test"
-
-	"github.com/mholt/caddy"
 )
 
 func TestFileParse(t *testing.T) {
@@ -27,18 +27,6 @@ func TestFileParse(t *testing.T) {
 		expectedZones  Zones
 	}{
 		{
-			`file ` + zoneFileName1 + ` miek.nl {
-				transfer from 127.0.0.1
-			}`,
-			true,
-			Zones{},
-		},
-		{
-			`file`,
-			true,
-			Zones{},
-		},
-		{
 			`file ` + zoneFileName1 + ` miek.nl.`,
 			false,
 			Zones{Names: []string{"miek.nl."}},
@@ -53,19 +41,32 @@ func TestFileParse(t *testing.T) {
 			false,
 			Zones{Names: []string{"10.in-addr.arpa."}},
 		},
+		// errors.
 		{
-			`file ` + zoneFileName1 + ` example.net. {
-				upstream a
+			`file ` + zoneFileName1 + ` miek.nl {
+				transfer from 127.0.0.1
 			}`,
 			true,
-			Zones{Names: []string{}},
+			Zones{},
+		},
+		{
+			`file`,
+			true,
+			Zones{},
+		},
+		{
+			`file ` + zoneFileName1 + ` example.net. {
+				no_reload
+			}`,
+			true,
+			Zones{},
 		},
 		{
 			`file ` + zoneFileName1 + ` example.net. {
 				no_rebloat
 			}`,
 			true,
-			Zones{Names: []string{}},
+			Zones{},
 		},
 	}
 
@@ -86,6 +87,38 @@ func TestFileParse(t *testing.T) {
 					t.Fatalf("Test %d expected %v for %d th zone, got %v", i, name, j, actualZones.Names[j])
 				}
 			}
+		}
+	}
+}
+
+func TestParseReload(t *testing.T) {
+	name, rm, err := test.TempFile(".", dbMiekNL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm()
+
+	tests := []struct {
+		input  string
+		reload time.Duration
+	}{
+		{
+			`file ` + name + ` example.org.`,
+			1 * time.Minute,
+		},
+		{
+			`file ` + name + ` example.org. {
+			reload 5s
+			}`,
+			5 * time.Second,
+		},
+	}
+
+	for i, test := range tests {
+		c := caddy.NewTestController("dns", test.input)
+		z, _ := fileParse(c)
+		if x := z.Z["example.org."].ReloadInterval; x != test.reload {
+			t.Errorf("Test %d expected reload to be %s, but got %s", i, test.reload, x)
 		}
 	}
 }
