@@ -6,7 +6,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 // Config configuration for a single server.

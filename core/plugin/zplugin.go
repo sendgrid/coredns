@@ -4,7 +4,6 @@ package plugin
 
 import (
 	// Include all plugins.
-	_ "github.com/caddyserver/caddy/onevent"
 	_ "github.com/coredns/coredns/plugin/auto"
 	_ "github.com/coredns/coredns/plugin/autopath"
 	_ "github.com/coredns/coredns/plugin/bind"
@@ -40,4 +39,5 @@ import (
 	_ "github.com/coredns/coredns/plugin/tls"
 	_ "github.com/coredns/coredns/plugin/trace"
 	_ "github.com/coredns/coredns/plugin/whoami"
+	_ "github.com/mholt/caddy/onevent"
 )

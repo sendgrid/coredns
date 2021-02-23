@@ -3,7 +3,7 @@ package dnstap
 import (
 	"testing"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 func TestConfig(t *testing.T) {

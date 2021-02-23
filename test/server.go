@@ -8,7 +8,7 @@ import (
 	// Hook in CoreDNS.
 	_ "github.com/coredns/coredns/core"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 var mu sync.Mutex

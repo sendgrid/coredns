@@ -5,7 +5,7 @@ import (
 
 	"github.com/coredns/coredns/plugin/test"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 func TestFileParse(t *testing.T) {
