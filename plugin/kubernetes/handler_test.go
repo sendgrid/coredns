@@ -2,12 +2,11 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
 	"github.com/coredns/coredns/plugin/kubernetes/object"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
-	"github.com/coredns/coredns/plugin/pkg/watch"
 	"github.com/coredns/coredns/plugin/test"
 
 	"github.com/miekg/dns"
@@ -90,7 +89,7 @@ var dnsTestCases = []test.Case{
 		Qname: "*._not-udp-or-tcp.svc1.testns.svc.cluster.local.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// SRV Service
@@ -201,7 +200,7 @@ var dnsTestCases = []test.Case{
 		Qname: "*.*.hdlsprtls.testns.svc.cluster.local.", Qtype: dns.TypeSRV,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// AAAA
@@ -232,7 +231,7 @@ var dnsTestCases = []test.Case{
 		Qname: "svc1.testns.svc.cluster.local.", Qtype: dns.TypeAAAA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// AAAA Service (non-existing service)
@@ -240,7 +239,7 @@ var dnsTestCases = []test.Case{
 		Qname: "svc0.testns.svc.cluster.local.", Qtype: dns.TypeAAAA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// A Service (non-existing service)
@@ -248,7 +247,7 @@ var dnsTestCases = []test.Case{
 		Qname: "svc0.testns.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// A Service (non-existing namespace)
@@ -256,7 +255,7 @@ var dnsTestCases = []test.Case{
 		Qname: "svc0.svc-nons.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// TXT Schema
@@ -264,7 +263,7 @@ var dnsTestCases = []test.Case{
 		Qname: "dns-version.cluster.local.", Qtype: dns.TypeTXT,
 		Rcode: dns.RcodeSuccess,
 		Answer: []dns.RR{
-			test.TXT("dns-version.cluster.local 28800 IN TXT 1.0.1"),
+			test.TXT("dns-version.cluster.local 28800 IN TXT 1.1.0"),
 		},
 	},
 	// A Service (Headless) does not exist
@@ -272,7 +271,7 @@ var dnsTestCases = []test.Case{
 		Qname: "bogusendpoint.hdls1.testns.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// A Service does not exist
@@ -280,7 +279,7 @@ var dnsTestCases = []test.Case{
 		Qname: "bogusendpoint.svc0.testns.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeNameError,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	// AAAA Service
@@ -324,21 +323,77 @@ var dnsTestCases = []test.Case{
 		Qname: "svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	303	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "pod.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	303	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 	{
 		Qname: "testns.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeSuccess,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	303	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// NS query for qname != zone (existing domain)
+	{
+		Qname: "svc.cluster.local.", Qtype: dns.TypeNS,
+		Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// NS query for qname != zone (existing domain)
+	{
+		Qname: "testns.svc.cluster.local.", Qtype: dns.TypeNS,
+		Rcode: dns.RcodeSuccess,
+		Ns: []dns.RR{
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// NS query for qname != zone (non existing domain)
+	{
+		Qname: "foo.cluster.local.", Qtype: dns.TypeNS,
+		Rcode: dns.RcodeNameError,
+		Ns: []dns.RR{
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// NS query for qname != zone (non existing domain)
+	{
+		Qname: "foo.svc.cluster.local.", Qtype: dns.TypeNS,
+		Rcode: dns.RcodeNameError,
+		Ns: []dns.RR{
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
+		},
+	},
+	// Dual Stack ClusterIP Services
+	{
+		Qname: "svc-dual-stack.testns.svc.cluster.local.", Qtype: dns.TypeA,
+		Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("svc-dual-stack.testns.svc.cluster.local.	5	IN	A	10.0.0.3"),
+		},
+	},
+	{
+		Qname: "svc-dual-stack.testns.svc.cluster.local.", Qtype: dns.TypeAAAA,
+		Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.AAAA("svc-dual-stack.testns.svc.cluster.local.	5	IN	AAAA	10::3"),
+		},
+	},
+	{
+		Qname: "svc-dual-stack.testns.svc.cluster.local.", Qtype: dns.TypeSRV,
+		Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{test.SRV("svc-dual-stack.testns.svc.cluster.local.	5	IN	SRV	0 50 80 svc-dual-stack.testns.svc.cluster.local.")},
+		Extra: []dns.RR{
+			test.A("svc-dual-stack.testns.svc.cluster.local.  5       IN      A       10.0.0.3"),
+			test.AAAA("svc-dual-stack.testns.svc.cluster.local.  5       IN      AAAA       10::3"),
 		},
 	},
 }
@@ -348,7 +403,7 @@ func TestServeDNS(t *testing.T) {
 	k := New([]string{"cluster.local."})
 	k.APIConn = &APIConnServeTest{}
 	k.Next = test.NextHandler(dns.RcodeSuccess, nil)
-	k.Namespaces = map[string]struct{}{"testns": struct{}{}}
+	k.Namespaces = map[string]struct{}{"testns": {}}
 	ctx := context.TODO()
 
 	for i, tc := range dnsTestCases {
@@ -371,9 +426,66 @@ func TestServeDNS(t *testing.T) {
 		}
 
 		// Before sorting, make sure that CNAMES do not appear after their target records
-		test.CNAMEOrder(t, resp)
+		if err := test.CNAMEOrder(resp); err != nil {
+			t.Error(err)
+		}
 
-		test.SortAndCheck(t, resp, tc)
+		if err := test.SortAndCheck(resp, tc); err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+var nsTestCases = []test.Case{
+	// A Service for an "exposed" namespace that "does exist"
+	{
+		Qname: "svc1.testns.svc.cluster.local.", Qtype: dns.TypeA,
+		Rcode: dns.RcodeSuccess,
+		Answer: []dns.RR{
+			test.A("svc1.testns.svc.cluster.local.	5	IN	A	10.0.0.1"),
+		},
+	},
+	// A service for an "exposed" namespace that "doesn't exist"
+	{
+		Qname: "svc1.nsnoexist.svc.cluster.local.", Qtype: dns.TypeA,
+		Rcode: dns.RcodeNameError,
+		Ns: []dns.RR{
+			test.SOA("cluster.local.	300	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1551484803 7200 1800 86400 30"),
+		},
+	},
+}
+
+func TestServeNamespaceDNS(t *testing.T) {
+	k := New([]string{"cluster.local."})
+	k.APIConn = &APIConnServeTest{}
+	k.Next = test.NextHandler(dns.RcodeSuccess, nil)
+	// if no namespaces are explicitly exposed, then they are all implicitly exposed
+	k.Namespaces = map[string]struct{}{}
+	ctx := context.TODO()
+
+	for i, tc := range nsTestCases {
+		r := tc.Msg()
+
+		w := dnstest.NewRecorder(&test.ResponseWriter{})
+
+		_, err := k.ServeDNS(ctx, w, r)
+		if err != tc.Error {
+			t.Errorf("Test %d expected no error, got %v", i, err)
+			return
+		}
+		if tc.Error != nil {
+			continue
+		}
+
+		resp := w.Msg
+		if resp == nil {
+			t.Fatalf("Test %d, got nil message and no error for %q", i, r.Question[0].Name)
+		}
+
+		// Before sorting, make sure that CNAMES do not appear after their target records
+		test.CNAMEOrder(resp)
+
+		test.SortAndCheck(resp, tc)
 	}
 }
 
@@ -383,7 +495,7 @@ var notSyncedTestCases = []test.Case{
 		Qname: "svc0.testns.svc.cluster.local.", Qtype: dns.TypeA,
 		Rcode: dns.RcodeServerFailure,
 		Ns: []dns.RR{
-			test.SOA("cluster.local.	303	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 60"),
+			test.SOA("cluster.local.	5	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1499347823 7200 1800 86400 5"),
 		},
 	},
 }
@@ -395,7 +507,7 @@ func TestNotSyncedServeDNS(t *testing.T) {
 		notSynced: true,
 	}
 	k.Next = test.NextHandler(dns.RcodeSuccess, nil)
-	k.Namespaces = map[string]struct{}{"testns": struct{}{}}
+	k.Namespaces = map[string]struct{}{"testns": {}}
 	ctx := context.TODO()
 
 	for i, tc := range notSyncedTestCases {
@@ -417,10 +529,13 @@ func TestNotSyncedServeDNS(t *testing.T) {
 			t.Fatalf("Test %d, got nil message and no error for %q", i, r.Question[0].Name)
 		}
 
-		// Before sorting, make sure that CNAMES do not appear after their target records
-		test.CNAMEOrder(t, resp)
+		if err := test.CNAMEOrder(resp); err != nil {
+			t.Error(err)
+		}
 
-		test.SortAndCheck(t, resp, tc)
+		if err := test.SortAndCheck(resp, tc); err != nil {
+			t.Error(err)
+		}
 	}
 }
 
@@ -429,18 +544,18 @@ type APIConnServeTest struct {
 }
 
 func (a APIConnServeTest) HasSynced() bool                         { return !a.notSynced }
-func (APIConnServeTest) Run()                                      { return }
+func (APIConnServeTest) Run()                                      {}
 func (APIConnServeTest) Stop() error                               { return nil }
 func (APIConnServeTest) EpIndexReverse(string) []*object.Endpoints { return nil }
 func (APIConnServeTest) SvcIndexReverse(string) []*object.Service  { return nil }
-func (APIConnServeTest) Modified() int64                           { return time.Now().Unix() }
-func (APIConnServeTest) SetWatchChan(watch.Chan)                   {}
-func (APIConnServeTest) Watch(string) error                        { return nil }
-func (APIConnServeTest) StopWatching(string)                       {}
+func (APIConnServeTest) Modified() int64                           { return int64(3) }
 
-func (APIConnServeTest) PodIndex(string) []*object.Pod {
+func (APIConnServeTest) PodIndex(ip string) []*object.Pod {
+	if ip != "10.240.0.1" {
+		return []*object.Pod{}
+	}
 	a := []*object.Pod{
-		{Namespace: "podns", PodIP: "10.240.0.1"}, // Remote IP set in test.ResponseWriter
+		{Namespace: "podns", Name: "foo", PodIP: "10.240.0.1"}, // Remote IP set in test.ResponseWriter
 	}
 	return a
 }
@@ -448,10 +563,10 @@ func (APIConnServeTest) PodIndex(string) []*object.Pod {
 var svcIndex = map[string][]*object.Service{
 	"svc1.testns": {
 		{
-			Name:      "svc1",
-			Namespace: "testns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: "10.0.0.1",
+			Name:       "svc1",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{"10.0.0.1"},
 			Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
@@ -459,10 +574,10 @@ var svcIndex = map[string][]*object.Service{
 	},
 	"svcempty.testns": {
 		{
-			Name:      "svcempty",
-			Namespace: "testns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: "10.0.0.1",
+			Name:       "svcempty",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{"10.0.0.1"},
 			Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
@@ -470,10 +585,10 @@ var svcIndex = map[string][]*object.Service{
 	},
 	"svc6.testns": {
 		{
-			Name:      "svc6",
-			Namespace: "testns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: "1234:abcd::1",
+			Name:       "svc6",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{"1234:abcd::1"},
 			Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
@@ -481,10 +596,10 @@ var svcIndex = map[string][]*object.Service{
 	},
 	"hdls1.testns": {
 		{
-			Name:      "hdls1",
-			Namespace: "testns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: api.ClusterIPNone,
+			Name:       "hdls1",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{api.ClusterIPNone},
 		},
 	},
 	"external.testns": {
@@ -511,19 +626,29 @@ var svcIndex = map[string][]*object.Service{
 	},
 	"hdlsprtls.testns": {
 		{
-			Name:      "hdlsprtls",
-			Namespace: "testns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: api.ClusterIPNone,
+			Name:       "hdlsprtls",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{api.ClusterIPNone},
 		},
 	},
 	"svc1.unexposedns": {
 		{
-			Name:      "svc1",
-			Namespace: "unexposedns",
-			Type:      api.ServiceTypeClusterIP,
-			ClusterIP: "10.0.0.2",
+			Name:       "svc1",
+			Namespace:  "unexposedns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{"10.0.0.2"},
 			Ports: []api.ServicePort{
+				{Name: "http", Protocol: "tcp", Port: 80},
+			},
+		},
+	},
+	"svc-dual-stack.testns": {
+		{
+			Name:       "svc-dual-stack",
+			Namespace:  "testns",
+			Type:       api.ServiceTypeClusterIP,
+			ClusterIPs: []string{"10.0.0.3", "10::3"}, Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
 		},
@@ -552,8 +677,9 @@ var epsIndex = map[string][]*object.Endpoints{
 				},
 			},
 		},
-		Name:      "svc1",
+		Name:      "svc1-slice1",
 		Namespace: "testns",
+		Index:     object.EndpointsKey("svc1", "testns"),
 	}},
 	"svcempty.testns": {{
 		Subsets: []object.EndpointSubset{
@@ -564,8 +690,9 @@ var epsIndex = map[string][]*object.Endpoints{
 				},
 			},
 		},
-		Name:      "svcempty",
+		Name:      "svcempty-slice1",
 		Namespace: "testns",
+		Index:     object.EndpointsKey("svcempty", "testns"),
 	}},
 	"hdls1.testns": {{
 		Subsets: []object.EndpointSubset{
@@ -583,8 +710,9 @@ var epsIndex = map[string][]*object.Endpoints{
 				},
 			},
 		},
-		Name:      "hdls1",
+		Name:      "hdls1-slice1",
 		Namespace: "testns",
+		Index:     object.EndpointsKey("hdls1", "testns"),
 	}},
 	"hdlsprtls.testns": {{
 		Subsets: []object.EndpointSubset{
@@ -595,8 +723,9 @@ var epsIndex = map[string][]*object.Endpoints{
 				Ports: []object.EndpointPort{{Port: -1}},
 			},
 		},
-		Name:      "hdlsprtls",
+		Name:      "hdlsprtls-slice1",
 		Namespace: "testns",
+		Index:     object.EndpointsKey("hdlsprtls", "testns"),
 	}},
 }
 
@@ -612,7 +741,7 @@ func (APIConnServeTest) EndpointsList() []*object.Endpoints {
 	return eps
 }
 
-func (APIConnServeTest) GetNodeByName(name string) (*api.Node, error) {
+func (APIConnServeTest) GetNodeByName(ctx context.Context, name string) (*api.Node, error) {
 	return &api.Node{
 		ObjectMeta: meta.ObjectMeta{
 			Name: "test.node.foo.bar",
@@ -623,6 +752,9 @@ func (APIConnServeTest) GetNodeByName(name string) (*api.Node, error) {
 func (APIConnServeTest) GetNamespaceByName(name string) (*api.Namespace, error) {
 	if name == "pod-nons" { // handler_pod_verified_test.go uses this for non-existent namespace.
 		return &api.Namespace{}, nil
+	}
+	if name == "nsnoexist" {
+		return nil, fmt.Errorf("namespace not found")
 	}
 	return &api.Namespace{
 		ObjectMeta: meta.ObjectMeta{

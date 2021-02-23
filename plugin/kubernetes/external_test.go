@@ -1,11 +1,11 @@
 package kubernetes
 
 import (
+	"context"
 	"testing"
 
 	"github.com/coredns/coredns/plugin/etcd/msg"
 	"github.com/coredns/coredns/plugin/kubernetes/object"
-	"github.com/coredns/coredns/plugin/pkg/watch"
 	"github.com/coredns/coredns/plugin/test"
 	"github.com/coredns/coredns/request"
 
@@ -23,13 +23,13 @@ var extCases = []struct {
 	{
 		Qname: "svc1.testns.example.org.", Rcode: dns.RcodeSuccess,
 		Msg: []msg.Service{
-			msg.Service{Host: "1.2.3.4", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
+			{Host: "1.2.3.4", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
 		},
 	},
 	{
 		Qname: "svc6.testns.example.org.", Rcode: dns.RcodeSuccess,
 		Msg: []msg.Service{
-			msg.Service{Host: "1:2::5", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
+			{Host: "1:2::5", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
 		},
 	},
 	{
@@ -38,7 +38,7 @@ var extCases = []struct {
 	{
 		Qname: "_http._tcp.svc1.testns.example.com.", Rcode: dns.RcodeSuccess,
 		Msg: []msg.Service{
-			msg.Service{Host: "1.2.3.4", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
+			{Host: "1.2.3.4", Port: 80, TTL: 5, Key: "/c/org/example/testns/svc1"},
 		},
 	},
 	{
@@ -53,7 +53,7 @@ func TestExternal(t *testing.T) {
 	k := New([]string{"cluster.local."})
 	k.APIConn = &external{}
 	k.Next = test.NextHandler(dns.RcodeSuccess, nil)
-	k.Namespaces = map[string]struct{}{"testns": struct{}{}}
+	k.Namespaces = map[string]struct{}{"testns": {}}
 
 	for i, tc := range extCases {
 		state := testRequest(tc.Qname)
@@ -61,16 +61,16 @@ func TestExternal(t *testing.T) {
 		svc, rcode := k.External(state)
 
 		if x := tc.Rcode; x != rcode {
-			t.Errorf("Test %d, expected rcode %d, got %d\n", i, x, rcode)
+			t.Errorf("Test %d, expected rcode %d, got %d", i, x, rcode)
 		}
 
 		if len(svc) != len(tc.Msg) {
-			t.Errorf("Test %d, expected %d for messages, got %d\n", i, len(tc.Msg), len(svc))
+			t.Errorf("Test %d, expected %d for messages, got %d", i, len(tc.Msg), len(svc))
 		}
 
 		for j, s := range svc {
 			if x := tc.Msg[j].Key; x != s.Key {
-				t.Errorf("Test %d, expected key %s, got %s\n", i, x, s.Key)
+				t.Errorf("Test %d, expected key %s, got %s", i, x, s.Key)
 			}
 			return
 		}
@@ -79,20 +79,17 @@ func TestExternal(t *testing.T) {
 
 type external struct{}
 
-func (external) HasSynced() bool                              { return true }
-func (external) Run()                                         { return }
-func (external) Stop() error                                  { return nil }
-func (external) EpIndexReverse(string) []*object.Endpoints    { return nil }
-func (external) SvcIndexReverse(string) []*object.Service     { return nil }
-func (external) Modified() int64                              { return 0 }
-func (external) SetWatchChan(watch.Chan)                      {}
-func (external) Watch(string) error                           { return nil }
-func (external) StopWatching(string)                          {}
-func (external) EpIndex(s string) []*object.Endpoints         { return nil }
-func (external) EndpointsList() []*object.Endpoints           { return nil }
-func (external) GetNodeByName(name string) (*api.Node, error) { return nil, nil }
-func (external) SvcIndex(s string) []*object.Service          { return svcIndexExternal[s] }
-func (external) PodIndex(string) []*object.Pod                { return nil }
+func (external) HasSynced() bool                                                   { return true }
+func (external) Run()                                                              {}
+func (external) Stop() error                                                       { return nil }
+func (external) EpIndexReverse(string) []*object.Endpoints                         { return nil }
+func (external) SvcIndexReverse(string) []*object.Service                          { return nil }
+func (external) Modified() int64                                                   { return 0 }
+func (external) EpIndex(s string) []*object.Endpoints                              { return nil }
+func (external) EndpointsList() []*object.Endpoints                                { return nil }
+func (external) GetNodeByName(ctx context.Context, name string) (*api.Node, error) { return nil, nil }
+func (external) SvcIndex(s string) []*object.Service                               { return svcIndexExternal[s] }
+func (external) PodIndex(string) []*object.Pod                                     { return nil }
 
 func (external) GetNamespaceByName(name string) (*api.Namespace, error) {
 	return &api.Namespace{
@@ -108,7 +105,7 @@ var svcIndexExternal = map[string][]*object.Service{
 			Name:        "svc1",
 			Namespace:   "testns",
 			Type:        api.ServiceTypeClusterIP,
-			ClusterIP:   "10.0.0.1",
+			ClusterIPs:  []string{"10.0.0.1"},
 			ExternalIPs: []string{"1.2.3.4"},
 			Ports:       []api.ServicePort{{Name: "http", Protocol: "tcp", Port: 80}},
 		},
@@ -118,7 +115,7 @@ var svcIndexExternal = map[string][]*object.Service{
 			Name:        "svc6",
 			Namespace:   "testns",
 			Type:        api.ServiceTypeClusterIP,
-			ClusterIP:   "10.0.0.3",
+			ClusterIPs:  []string{"10.0.0.3"},
 			ExternalIPs: []string{"1:2::5"},
 			Ports:       []api.ServicePort{{Name: "http", Protocol: "tcp", Port: 80}},
 		},

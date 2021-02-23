@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mholt/caddy"
+	"github.com/coredns/caddy"
 )
 
 func TestSetupPolicy(t *testing.T) {

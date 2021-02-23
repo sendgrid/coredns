@@ -4,28 +4,19 @@ import (
 	"regexp"
 	gotmpl "text/template"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/upstream"
 
-	"github.com/mholt/caddy"
 	"github.com/miekg/dns"
 )
 
-func init() {
-	caddy.RegisterPlugin("template", caddy.Plugin{
-		ServerType: "dns",
-		Action:     setupTemplate,
-	})
-}
+func init() { plugin.Register("template", setupTemplate) }
 
 func setupTemplate(c *caddy.Controller) error {
 	handler, err := templateParse(c)
 	if err != nil {
-		return plugin.Error("template", err)
-	}
-
-	if err := setupMetrics(c); err != nil {
 		return plugin.Error("template", err)
 	}
 
@@ -74,6 +65,7 @@ func templateParse(c *caddy.Controller) (handler Handler, err error) {
 		templatePrefix := ""
 
 		t.answer = make([]*gotmpl.Template, 0)
+		t.upstream = upstream.New()
 
 		for c.NextBlock() {
 			switch c.Val() {
@@ -144,12 +136,8 @@ func templateParse(c *caddy.Controller) (handler Handler, err error) {
 				t.fall.SetZonesFromArgs(c.RemainingArgs())
 
 			case "upstream":
-				args := c.RemainingArgs()
-				u, err := upstream.New(args)
-				if err != nil {
-					return handler, err
-				}
-				t.upstream = &u
+				// remove soon
+				c.RemainingArgs()
 			default:
 				return handler, c.ArgErr()
 			}
@@ -157,10 +145,6 @@ func templateParse(c *caddy.Controller) (handler Handler, err error) {
 
 		if len(t.regex) == 0 {
 			t.regex = append(t.regex, regexp.MustCompile(".*"))
-		}
-
-		if len(t.answer) == 0 && len(t.authority) == 0 && t.rcode == dns.RcodeSuccess {
-			return handler, c.Errf("no answer section for template found: %v", handler)
 		}
 
 		handler.Templates = append(handler.Templates, t)

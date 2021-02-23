@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/plugin/test"
 
 	"github.com/miekg/dns"
@@ -48,18 +49,30 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
-func TestIncrementDepthAndCheck(t *testing.T) {
-	ctx := context.Background()
-	var err error
-	for i := 0; i <= maxreentries; i++ {
-		ctx, err = incrementDepthAndCheck(ctx)
-		if err != nil {
-			t.Errorf("Expected no error for depthCheck (i=%v), got %s", i, err)
-		}
+func TestDebug(t *testing.T) {
+	configNoDebug, configDebug := testConfig("dns", testPlugin{}), testConfig("dns", testPlugin{})
+	configDebug.Debug = true
+
+	s1, err := NewServer("127.0.0.1:53", []*Config{configDebug, configNoDebug})
+	if err != nil {
+		t.Errorf("Expected no error for NewServer, got %s", err)
 	}
-	_, err = incrementDepthAndCheck(ctx)
-	if err == nil {
-		t.Errorf("Expected error for depthCheck (i=%v)", maxreentries+1)
+	if !s1.debug {
+		t.Errorf("Expected debug mode enabled for server s1")
+	}
+	if !log.D.Value() {
+		t.Errorf("Expected debug logging enabled")
+	}
+
+	s2, err := NewServer("127.0.0.1:53", []*Config{configNoDebug})
+	if err != nil {
+		t.Errorf("Expected no error for NewServer, got %s", err)
+	}
+	if s2.debug {
+		t.Errorf("Expected debug mode disabled for server s2")
+	}
+	if log.D.Value() {
+		t.Errorf("Expected debug logging disabled")
 	}
 }
 

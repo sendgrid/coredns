@@ -95,37 +95,6 @@ func TestSigningCname(t *testing.T) {
 	}
 }
 
-// Disabled for now, see #1211.
-func testZoneSigningDelegation(t *testing.T) {
-	d, rm1, rm2 := newDnssec(t, []string{"miek.nl."})
-	defer rm1()
-	defer rm2()
-
-	m := testDelegationMsg()
-	state := request.Request{Req: m, Zone: "miek.nl."}
-	m = d.Sign(state, time.Now().UTC(), server)
-	if !section(m.Ns, 1) {
-		t.Errorf("Authority section should have 1 RRSIG")
-		t.Logf("%v\n", m)
-	}
-
-	ds := 0
-	for i := range m.Ns {
-		if _, ok := m.Ns[i].(*dns.DS); ok {
-			ds++
-		}
-	}
-	if ds != 1 {
-		t.Errorf("Authority section should have 1 DS")
-		t.Logf("%v\n", m)
-
-	}
-	if !section(m.Extra, 0) {
-		t.Errorf("Answer section should have 0 RRSIGs")
-		t.Logf("%v\n", m)
-	}
-}
-
 func TestSigningDname(t *testing.T) {
 	d, rm1, rm2 := newDnssec(t, []string{"miek.nl."})
 	defer rm1()
@@ -181,20 +150,6 @@ func testMsgEx() *dns.Msg {
 func testMsgCname() *dns.Msg {
 	return &dns.Msg{
 		Answer: []dns.RR{test.CNAME("www.miek.nl.	1800	IN	CNAME	a.miek.nl.")},
-	}
-}
-
-func testDelegationMsg() *dns.Msg {
-	return &dns.Msg{
-		Ns: []dns.RR{
-			test.NS("miek.nl.	3600	IN	NS	linode.atoom.net."),
-			test.NS("miek.nl.	3600	IN	NS	ns-ext.nlnetlabs.nl."),
-			test.NS("miek.nl.	3600	IN	NS	omval.tednet.nl."),
-		},
-		Extra: []dns.RR{
-			test.A("omval.tednet.nl.	3600	IN	A	185.49.141.42"),
-			test.AAAA("omval.tednet.nl.	3600	IN	AAAA	2a04:b900:0:100::42"),
-		},
 	}
 }
 

@@ -44,16 +44,17 @@ func TestLookupEnt(t *testing.T) {
 		rec := dnstest.NewRecorder(&test.ResponseWriter{})
 		_, err := fm.ServeDNS(ctx, rec, m)
 		if err != nil {
-			t.Errorf("Expected no error, got %v\n", err)
+			t.Errorf("Expected no error, got %v", err)
 			return
 		}
 
 		resp := rec.Msg
-		test.SortAndCheck(t, resp, tc)
+		if err := test.SortAndCheck(resp, tc); err != nil {
+			t.Error(err)
+		}
 	}
 }
 
-// fdjfdjkf
 const dbMiekENTNL = `; File written on Sat Apr  2 16:43:11 2016
 ; dnssec_signzone version 9.10.3-P4-Ubuntu
 miek.nl.		1800	IN SOA	linode.atoom.net. miek.miek.nl. (

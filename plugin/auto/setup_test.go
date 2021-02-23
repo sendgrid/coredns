@@ -2,96 +2,103 @@ package auto
 
 import (
 	"testing"
+	"time"
 
-	"github.com/mholt/caddy"
+	"github.com/coredns/caddy"
 )
 
 func TestAutoParse(t *testing.T) {
 	tests := []struct {
-		inputFileRules    string
-		shouldErr         bool
-		expectedDirectory string
-		expectedTempl     string
-		expectedRe        string
-		expectedTo        []string
+		inputFileRules         string
+		shouldErr              bool
+		expectedDirectory      string
+		expectedTempl          string
+		expectedRe             string
+		expectedReloadInterval time.Duration
 	}{
 		{
 			`auto example.org {
 				directory /tmp
-				transfer to 127.0.0.1
 			}`,
-			false, "/tmp", "${1}", `db\.(.*)`, []string{"127.0.0.1:53"},
+			false, "/tmp", "${1}", `db\.(.*)`, 60 * time.Second,
 		},
 		{
 			`auto 10.0.0.0/24 {
 				directory /tmp
 			}`,
-			false, "/tmp", "${1}", `db\.(.*)`, nil,
+			false, "/tmp", "${1}", `db\.(.*)`, 60 * time.Second,
 		},
+		{
+			`auto {
+				directory /tmp
+				reload 0
+			}`,
+			false, "/tmp", "${1}", `db\.(.*)`, 0 * time.Second,
+		},
+		{
+			`auto {
+				directory /tmp (.*) bliep
+			}`,
+			false, "/tmp", "bliep", `(.*)`, 60 * time.Second,
+		},
+		{
+			`auto {
+				directory /tmp (.*) bliep
+				reload 10s
+			}`,
+			false, "/tmp", "bliep", `(.*)`, 10 * time.Second,
+		},
+		// errors
+		// NO_RELOAD has been deprecated.
 		{
 			`auto {
 				directory /tmp
 				no_reload
 			}`,
-			false, "/tmp", "${1}", `db\.(.*)`, nil,
+			true, "/tmp", "${1}", `db\.(.*)`, 0 * time.Second,
 		},
-		{
-			`auto {
-				directory /tmp (.*) bliep
-			}`,
-			false, "/tmp", "bliep", `(.*)`, nil,
-		},
+		// TIMEOUT has been deprecated.
 		{
 			`auto {
 				directory /tmp (.*) bliep 10
 			}`,
-			false, "/tmp", "bliep", `(.*)`, nil,
+			true, "/tmp", "bliep", `(.*)`, 10 * time.Second,
 		},
+		// TRANSFER has been deprecated.
 		{
 			`auto {
-				directory /tmp (.*) bliep
+				directory /tmp (.*) bliep 10
 				transfer to 127.0.0.1
-				transfer to 127.0.0.2
-				upstream 8.8.8.8
 			}`,
-			false, "/tmp", "bliep", `(.*)`, []string{"127.0.0.1:53", "127.0.0.2:53"},
+			true, "/tmp", "bliep", `(.*)`, 10 * time.Second,
 		},
-		// errors
+		// no template specified.
+		{
+			`auto {
+				directory /tmp (.*)
+			}`,
+			true, "/tmp", "", `(.*)`, 60 * time.Second,
+		},
+		// no directory specified.
 		{
 			`auto example.org {
 				directory
 			}`,
-			true, "", "${1}", `db\.(.*)`, nil,
+			true, "", "${1}", `db\.(.*)`, 60 * time.Second,
 		},
+		// illegal REGEXP.
 		{
 			`auto example.org {
 				directory /tmp * {1}
 			}`,
-			true, "", "${1}", ``, nil,
+			true, "/tmp", "${1}", ``, 60 * time.Second,
 		},
+		// unexpected argument.
 		{
 			`auto example.org {
-				directory /tmp * {1} aa
+				directory /tmp (.*) {1} aa
 			}`,
-			true, "", "${1}", ``, nil,
-		},
-		{
-			`auto example.org {
-				directory /tmp .* {1}
-			}`,
-			true, "", "${1}", ``, nil,
-		},
-		{
-			`auto example.org {
-				directory /tmp .* {1}
-			}`,
-			true, "", "${1}", ``, nil,
-		},
-		{
-			`auto example.org {
-				directory /tmp .* {1}
-			}`,
-			true, "", "${1}", ``, nil,
+			true, "/tmp", "${1}", ``, 60 * time.Second,
 		},
 	}
 
@@ -113,12 +120,8 @@ func TestAutoParse(t *testing.T) {
 			if a.loader.re.String() != test.expectedRe {
 				t.Fatalf("Test %d expected %v, got %v", i, test.expectedRe, a.loader.re)
 			}
-			if test.expectedTo != nil {
-				for j, got := range a.loader.transferTo {
-					if got != test.expectedTo[j] {
-						t.Fatalf("Test %d expected %v, got %v", i, test.expectedTo[j], got)
-					}
-				}
+			if a.loader.ReloadInterval != test.expectedReloadInterval {
+				t.Fatalf("Test %d expected %v, got %v", i, test.expectedReloadInterval, a.loader.ReloadInterval)
 			}
 		}
 	}

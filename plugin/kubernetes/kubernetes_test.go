@@ -1,11 +1,12 @@
 package kubernetes
 
 import (
+	"context"
+	"net"
 	"testing"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/kubernetes/object"
-	"github.com/coredns/coredns/plugin/pkg/watch"
 	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
@@ -60,30 +61,35 @@ func TestEndpointHostname(t *testing.T) {
 type APIConnServiceTest struct{}
 
 func (APIConnServiceTest) HasSynced() bool                           { return true }
-func (APIConnServiceTest) Run()                                      { return }
+func (APIConnServiceTest) Run()                                      {}
 func (APIConnServiceTest) Stop() error                               { return nil }
 func (APIConnServiceTest) PodIndex(string) []*object.Pod             { return nil }
 func (APIConnServiceTest) SvcIndexReverse(string) []*object.Service  { return nil }
 func (APIConnServiceTest) EpIndexReverse(string) []*object.Endpoints { return nil }
 func (APIConnServiceTest) Modified() int64                           { return 0 }
-func (APIConnServiceTest) SetWatchChan(watch.Chan)                   {}
-func (APIConnServiceTest) Watch(string) error                        { return nil }
-func (APIConnServiceTest) StopWatching(string)                       {}
 
 func (APIConnServiceTest) SvcIndex(string) []*object.Service {
 	svcs := []*object.Service{
 		{
-			Name:      "svc1",
-			Namespace: "testns",
-			ClusterIP: "10.0.0.1",
+			Name:       "svc1",
+			Namespace:  "testns",
+			ClusterIPs: []string{"10.0.0.1"},
 			Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
 		},
 		{
-			Name:      "hdls1",
-			Namespace: "testns",
-			ClusterIP: api.ClusterIPNone,
+			Name:       "svc-dual-stack",
+			Namespace:  "testns",
+			ClusterIPs: []string{"10.0.0.2", "10::2"},
+			Ports: []api.ServicePort{
+				{Name: "http", Protocol: "tcp", Port: 80},
+			},
+		},
+		{
+			Name:       "hdls1",
+			Namespace:  "testns",
+			ClusterIPs: []string{api.ClusterIPNone},
 		},
 		{
 			Name:         "external",
@@ -101,17 +107,25 @@ func (APIConnServiceTest) SvcIndex(string) []*object.Service {
 func (APIConnServiceTest) ServiceList() []*object.Service {
 	svcs := []*object.Service{
 		{
-			Name:      "svc1",
-			Namespace: "testns",
-			ClusterIP: "10.0.0.1",
+			Name:       "svc1",
+			Namespace:  "testns",
+			ClusterIPs: []string{"10.0.0.1"},
 			Ports: []api.ServicePort{
 				{Name: "http", Protocol: "tcp", Port: 80},
 			},
 		},
 		{
-			Name:      "hdls1",
-			Namespace: "testns",
-			ClusterIP: api.ClusterIPNone,
+			Name:       "svc-dual-stack",
+			Namespace:  "testns",
+			ClusterIPs: []string{"10.0.0.2", "10::2"},
+			Ports: []api.ServicePort{
+				{Name: "http", Protocol: "tcp", Port: 80},
+			},
+		},
+		{
+			Name:       "hdls1",
+			Namespace:  "testns",
+			ClusterIPs: []string{api.ClusterIPNone},
 		},
 		{
 			Name:         "external",
@@ -139,8 +153,9 @@ func (APIConnServiceTest) EpIndex(string) []*object.Endpoints {
 					},
 				},
 			},
-			Name:      "svc1",
+			Name:      "svc1-slice1",
 			Namespace: "testns",
+			Index:     object.EndpointsKey("svc1", "testns"),
 		},
 		{
 			Subsets: []object.EndpointSubset{
@@ -153,22 +168,9 @@ func (APIConnServiceTest) EpIndex(string) []*object.Endpoints {
 					},
 				},
 			},
-			Name:      "hdls1",
+			Name:      "hdls1-slice1",
 			Namespace: "testns",
-		},
-		{
-			Subsets: []object.EndpointSubset{
-				{
-					Addresses: []object.EndpointAddress{
-						{IP: "172.0.0.3"},
-					},
-					Ports: []object.EndpointPort{
-						{Port: 80, Protocol: "tcp", Name: "http"},
-					},
-				},
-			},
-			Name:      "hdls1",
-			Namespace: "testns",
+			Index:     object.EndpointsKey("hdls1", "testns"),
 		},
 		{
 			Subsets: []object.EndpointSubset{
@@ -196,8 +198,9 @@ func (APIConnServiceTest) EndpointsList() []*object.Endpoints {
 					},
 				},
 			},
-			Name:      "svc1",
+			Name:      "svc1-slice1",
 			Namespace: "testns",
+			Index:     object.EndpointsKey("svc1", "testns"),
 		},
 		{
 			Subsets: []object.EndpointSubset{
@@ -210,22 +213,24 @@ func (APIConnServiceTest) EndpointsList() []*object.Endpoints {
 					},
 				},
 			},
-			Name:      "hdls1",
+			Name:      "hdls1-slice1",
 			Namespace: "testns",
+			Index:     object.EndpointsKey("hdls1", "testns"),
 		},
 		{
 			Subsets: []object.EndpointSubset{
 				{
 					Addresses: []object.EndpointAddress{
-						{IP: "172.0.0.3"},
+						{IP: "172.0.0.2"},
 					},
 					Ports: []object.EndpointPort{
 						{Port: 80, Protocol: "tcp", Name: "http"},
 					},
 				},
 			},
-			Name:      "hdls1",
+			Name:      "hdls1-slice2",
 			Namespace: "testns",
+			Index:     object.EndpointsKey("hdls1", "testns"),
 		},
 		{
 			Subsets: []object.EndpointSubset{
@@ -240,7 +245,7 @@ func (APIConnServiceTest) EndpointsList() []*object.Endpoints {
 	return eps
 }
 
-func (APIConnServiceTest) GetNodeByName(name string) (*api.Node, error) {
+func (APIConnServiceTest) GetNodeByName(ctx context.Context, name string) (*api.Node, error) {
 	return &api.Node{
 		ObjectMeta: meta.ObjectMeta{
 			Name: "test.node.foo.bar",
@@ -257,7 +262,6 @@ func (APIConnServiceTest) GetNamespaceByName(name string) (*api.Namespace, error
 }
 
 func TestServices(t *testing.T) {
-
 	k := New([]string{"interwebs.test."})
 	k.APIConn = &APIConnServiceTest{}
 
@@ -268,16 +272,29 @@ func TestServices(t *testing.T) {
 	type svcTest struct {
 		qname  string
 		qtype  uint16
-		answer svcAns
+		answer []svcAns
 	}
 	tests := []svcTest{
 		// Cluster IP Services
-		{qname: "svc1.testns.svc.interwebs.test.", qtype: dns.TypeA, answer: svcAns{host: "10.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1"}},
-		{qname: "_http._tcp.svc1.testns.svc.interwebs.test.", qtype: dns.TypeSRV, answer: svcAns{host: "10.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1"}},
-		{qname: "ep1a.svc1.testns.svc.interwebs.test.", qtype: dns.TypeA, answer: svcAns{host: "172.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1/ep1a"}},
+		{qname: "svc1.testns.svc.interwebs.test.", qtype: dns.TypeA, answer: []svcAns{{host: "10.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1"}}},
+		{qname: "_http._tcp.svc1.testns.svc.interwebs.test.", qtype: dns.TypeSRV, answer: []svcAns{{host: "10.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1"}}},
+		{qname: "ep1a.svc1.testns.svc.interwebs.test.", qtype: dns.TypeA, answer: []svcAns{{host: "172.0.0.1", key: "/" + coredns + "/test/interwebs/svc/testns/svc1/ep1a"}}},
+
+		// Dual-Stack Cluster IP Service
+		{
+			qname: "_http._tcp.svc-dual-stack.testns.svc.interwebs.test.",
+			qtype: dns.TypeSRV,
+			answer: []svcAns{
+				{host: "10.0.0.2", key: "/" + coredns + "/test/interwebs/svc/testns/svc-dual-stack"},
+				{host: "10::2", key: "/" + coredns + "/test/interwebs/svc/testns/svc-dual-stack"},
+			},
+		},
 
 		// External Services
-		{qname: "external.testns.svc.interwebs.test.", qtype: dns.TypeCNAME, answer: svcAns{host: "coredns.io", key: "/" + coredns + "/test/interwebs/svc/testns/external"}},
+		{qname: "external.testns.svc.interwebs.test.", qtype: dns.TypeCNAME, answer: []svcAns{{host: "coredns.io", key: "/" + coredns + "/test/interwebs/svc/testns/external"}}},
+
+		// Headless Services
+		{qname: "hdls1.testns.svc.interwebs.test.", qtype: dns.TypeA, answer: []svcAns{{host: "172.0.0.2", key: "/" + coredns + "/test/interwebs/svc/testns/hdls1/172-0-0-2"}}},
 	}
 
 	for i, test := range tests {
@@ -285,91 +302,88 @@ func TestServices(t *testing.T) {
 			Req:  &dns.Msg{Question: []dns.Question{{Name: test.qname, Qtype: test.qtype}}},
 			Zone: "interwebs.test.", // must match from k.Zones[0]
 		}
-		svcs, e := k.Services(state, false, plugin.Options{})
+		svcs, e := k.Services(context.TODO(), state, false, plugin.Options{})
 		if e != nil {
 			t.Errorf("Test %d: got error '%v'", i, e)
 			continue
 		}
-		if len(svcs) != 1 {
-			t.Errorf("Test %d, expected expected 1 answer, got %v", i, len(svcs))
+		if len(svcs) != len(test.answer) {
+			t.Errorf("Test %d, expected %v answer, got %v", i, len(test.answer), len(svcs))
 			continue
 		}
 
-		if test.answer.host != svcs[0].Host {
-			t.Errorf("Test %d, expected host '%v', got '%v'", i, test.answer.host, svcs[0].Host)
+		for j := range svcs {
+			if test.answer[j].host != svcs[j].Host {
+				t.Errorf("Test %d, expected host '%v', got '%v'", i, test.answer[j].host, svcs[j].Host)
+			}
+			if test.answer[j].key != svcs[j].Key {
+				t.Errorf("Test %d, expected key '%v', got '%v'", i, test.answer[j].key, svcs[j].Key)
+			}
 		}
-		if test.answer.key != svcs[0].Key {
-			t.Errorf("Test %d, expected key '%v', got '%v'", i, test.answer.key, svcs[0].Key)
-		}
 	}
 }
 
-func TestServiceFQDN(t *testing.T) {
-	fqdn := serviceFQDN(
-		&object.Service{
-			Name:      "svc1",
-			Namespace: "testns",
-		}, "cluster.local")
+func TestServicesAuthority(t *testing.T) {
+	k := New([]string{"interwebs.test."})
+	k.APIConn = &APIConnServiceTest{}
 
-	expected := "svc1.testns.svc.cluster.local."
-	if fqdn != expected {
-		t.Errorf("Expected '%v', got '%v'.", expected, fqdn)
+	type svcAns struct {
+		host string
+		key  string
 	}
-}
-
-func TestPodFQDN(t *testing.T) {
-	fqdn := podFQDN(
-		&object.Pod{
-			Name:      "pod1",
-			Namespace: "testns",
-			PodIP:     "10.10.0.10",
-		}, "cluster.local")
-
-	expected := "10-10-0-10.testns.pod.cluster.local."
-	if fqdn != expected {
-		t.Errorf("Expected '%v', got '%v'.", expected, fqdn)
+	type svcTest struct {
+		localIPs []net.IP
+		qname    string
+		qtype    uint16
+		answer   []svcAns
 	}
-	fqdn = podFQDN(
-		&object.Pod{
-			Name:      "pod1",
-			Namespace: "testns",
-			PodIP:     "aaaa:bbbb:cccc::zzzz",
-		}, "cluster.local")
-
-	expected = "aaaa-bbbb-cccc--zzzz.testns.pod.cluster.local."
-	if fqdn != expected {
-		t.Errorf("Expected '%v', got '%v'.", expected, fqdn)
-	}
-}
-
-func TestEndpointFQDN(t *testing.T) {
-	fqdns := endpointFQDN(
-		&object.Endpoints{
-			Subsets: []object.EndpointSubset{
-				{
-					Addresses: []object.EndpointAddress{
-						{
-							IP:       "172.0.0.1",
-							Hostname: "ep1a",
-						},
-						{
-							IP: "172.0.0.2",
-						},
-					},
-				},
+	tests := []svcTest{
+		{localIPs: []net.IP{net.ParseIP("1.2.3.4")}, qname: "ns.dns.interwebs.test.", qtype: dns.TypeA, answer: []svcAns{{host: "1.2.3.4", key: "/" + coredns + "/test/interwebs/dns/ns"}}},
+		{localIPs: []net.IP{net.ParseIP("1.2.3.4")}, qname: "ns.dns.interwebs.test.", qtype: dns.TypeAAAA},
+		{localIPs: []net.IP{net.ParseIP("1:2::3:4")}, qname: "ns.dns.interwebs.test.", qtype: dns.TypeA},
+		{localIPs: []net.IP{net.ParseIP("1:2::3:4")}, qname: "ns.dns.interwebs.test.", qtype: dns.TypeAAAA, answer: []svcAns{{host: "1:2::3:4", key: "/" + coredns + "/test/interwebs/dns/ns"}}},
+		{
+			localIPs: []net.IP{net.ParseIP("1.2.3.4"), net.ParseIP("1:2::3:4")},
+			qname:    "ns.dns.interwebs.test.",
+			qtype:    dns.TypeNS, answer: []svcAns{
+				{host: "1.2.3.4", key: "/" + coredns + "/test/interwebs/dns/ns"},
+				{host: "1:2::3:4", key: "/" + coredns + "/test/interwebs/dns/ns"},
 			},
-			Name:      "svc1",
-			Namespace: "testns",
-		}, "cluster.local", false)
-
-	expected := []string{
-		"ep1a.svc1.testns.svc.cluster.local.",
-		"172-0-0-2.svc1.testns.svc.cluster.local.",
+		},
 	}
 
-	for i := range fqdns {
-		if fqdns[i] != expected[i] {
-			t.Errorf("Expected '%v', got '%v'.", expected[i], fqdns[i])
+	for i, test := range tests {
+		k.localIPs = test.localIPs
+
+		state := request.Request{
+			Req:  &dns.Msg{Question: []dns.Question{{Name: test.qname, Qtype: test.qtype}}},
+			Zone: k.Zones[0],
+		}
+		svcs, e := k.Services(context.TODO(), state, false, plugin.Options{})
+		if e != nil {
+			t.Errorf("Test %d: got error '%v'", i, e)
+			continue
+		}
+		if test.answer != nil && len(svcs) != len(test.answer) {
+			t.Errorf("Test %d, expected 1 answer, got %v", i, len(svcs))
+			continue
+		}
+		if test.answer == nil && len(svcs) != 0 {
+			t.Errorf("Test %d, expected no answer, got %v", i, len(svcs))
+			continue
+		}
+
+		if test.answer == nil && len(svcs) == 0 {
+			continue
+		}
+
+		for i, answer := range test.answer {
+			if answer.host != svcs[i].Host {
+				t.Errorf("Test %d, expected host '%v', got '%v'", i, answer.host, svcs[i].Host)
+			}
+			if answer.key != svcs[i].Key {
+				t.Errorf("Test %d, expected key '%v', got '%v'", i, answer.key, svcs[i].Key)
+			}
 		}
 	}
 }

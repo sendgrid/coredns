@@ -9,4 +9,4 @@
 		consolidate 30s "^Failed to .+"
 	}
 	log
-}
+} 

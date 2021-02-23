@@ -3,7 +3,7 @@ package template
 import (
 	"testing"
 
-	"github.com/mholt/caddy"
+	"github.com/coredns/caddy"
 )
 
 func TestSetup(t *testing.T) {
@@ -36,13 +36,6 @@ func TestSetupParse(t *testing.T) {
 		{`template X`, true},
 		{`template ANY`, true},
 		{`template ANY X`, true},
-		{`template ANY ANY (?P<x>`, true},
-		{
-			`template ANY ANY {
-
-			}`,
-			true,
-		},
 		{
 			`template ANY ANY .* {
 				notavailable
@@ -92,6 +85,13 @@ func TestSetupParse(t *testing.T) {
 			true,
 		},
 		// examples
+		{`template ANY ANY (?P<x>`, false},
+		{
+			`template ANY ANY {
+
+			}`,
+			false,
+		},
 		{
 			`template ANY A example.com {
 				match ip-(?P<a>[0-9]*)-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]example[.]com
@@ -140,20 +140,6 @@ func TestSetupParse(t *testing.T) {
 					additional "ns1.example. 60 IN A 198.51.100.8"
 				}`,
 			false,
-		},
-		{
-			`template ANY ANY up.stream.local {
-					answer "up.stream.local 5 IN CNAME up.river.local"
-					upstream
-				}`,
-			false,
-		},
-		{
-			`template ANY ANY up.stream.local {
-					answer "up.stream.local 5 IN CNAME up.river.local"
-					upstream invalid-upstream-argument
-				}`,
-			true,
 		},
 	}
 	for i, test := range tests {

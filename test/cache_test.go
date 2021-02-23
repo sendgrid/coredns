@@ -3,9 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/coredns/coredns/plugin/proxy"
 	"github.com/coredns/coredns/plugin/test"
-	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
 )
@@ -19,44 +17,50 @@ func TestLookupCache(t *testing.T) {
 	defer rm()
 
 	corefile := `example.org:0 {
-       file ` + name + `
-}
-`
+		file ` + name + `
+	}`
+
 	i, udp, _, err := CoreDNSServerAndPorts(corefile)
 	if err != nil {
 		t.Fatalf("Could not get CoreDNS serving instance: %s", err)
 	}
 	defer i.Stop()
 
-	// Start caching proxy CoreDNS that we want to test.
+	// Start caching forward CoreDNS that we want to test.
 	corefile = `example.org:0 {
-	proxy . ` + udp + `
-	cache 10
-}
-`
+		forward . ` + udp + `
+		cache 10
+	}`
+
 	i, udp, _, err = CoreDNSServerAndPorts(corefile)
 	if err != nil {
 		t.Fatalf("Could not get CoreDNS serving instance: %s", err)
 	}
 	defer i.Stop()
 
-	p := proxy.NewLookup([]string{udp})
-	state := request.Request{W: &test.ResponseWriter{}, Req: new(dns.Msg)}
-
 	t.Run("Long TTL", func(t *testing.T) {
-		testCase(t, state, p, "example.org.", 2, 10)
+		testCase(t, "example.org.", udp, 2, 10)
 	})
 
 	t.Run("Short TTL", func(t *testing.T) {
-		testCase(t, state, p, "short.example.org.", 1, 5)
+		testCase(t, "short.example.org.", udp, 1, 5)
 	})
 
+	t.Run("DNSSEC OPT", func(t *testing.T) {
+		testCaseDNSSEC(t, "example.org.", udp, 4096)
+	})
+
+	t.Run("DNSSEC OPT", func(t *testing.T) {
+		testCaseDNSSEC(t, "example.org.", udp, 0)
+	})
 }
 
-func testCase(t *testing.T, state request.Request, p proxy.Proxy, name string, expectAnsLen int, expectTTL uint32) {
-	resp, err := p.Lookup(state, name, dns.TypeA)
+func testCase(t *testing.T, name, addr string, expectAnsLen int, expectTTL uint32) {
+	m := new(dns.Msg)
+	m.SetQuestion(name, dns.TypeA)
+	resp, err := dns.Exchange(m, addr)
 	if err != nil {
-		t.Fatal("Expected to receive reply, but didn't")
+		t.Fatalf("Expected to receive reply, but didn't: %s", err)
 	}
 
 	if len(resp.Answer) != expectAnsLen {
@@ -67,4 +71,87 @@ func testCase(t *testing.T, state request.Request, p proxy.Proxy, name string, e
 	if ttl != expectTTL {
 		t.Errorf("Expected TTL to be %d, got %d", expectTTL, ttl)
 	}
+}
+
+func testCaseDNSSEC(t *testing.T, name, addr string, bufsize int) {
+	m := new(dns.Msg)
+	m.SetQuestion(name, dns.TypeA)
+
+	if bufsize > 0 {
+		o := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
+		o.SetDo()
+		o.SetUDPSize(uint16(bufsize))
+		m.Extra = append(m.Extra, o)
+	}
+	resp, err := dns.Exchange(m, addr)
+	if err != nil {
+		t.Fatalf("Expected to receive reply, but didn't: %s", err)
+	}
+
+	if len(resp.Extra) == 0 && bufsize == 0 {
+		// no OPT, this is OK
+		return
+	}
+
+	opt := resp.Extra[len(resp.Extra)-1]
+	if x, ok := opt.(*dns.OPT); !ok && bufsize > 0 {
+		t.Fatalf("Expected OPT RR, got %T", x)
+	}
+	if bufsize > 0 {
+		if !opt.(*dns.OPT).Do() {
+			t.Errorf("Expected DO bit to be set, got false")
+		}
+		if x := opt.(*dns.OPT).UDPSize(); int(x) != bufsize {
+			t.Errorf("Expected %d bufsize, got %d", bufsize, x)
+		}
+	} else {
+		if opt.Header().Rrtype == dns.TypeOPT {
+			t.Errorf("Expected no OPT RR, but got one: %s", opt)
+		}
+	}
+}
+
+func TestLookupCacheWithoutEdns(t *testing.T) {
+	name, rm, err := test.TempFile(".", exampleOrg)
+	if err != nil {
+		t.Fatalf("Failed to create zone: %s", err)
+	}
+	defer rm()
+
+	corefile := `example.org:0 {
+		file ` + name + `
+	}`
+
+	i, udp, _, err := CoreDNSServerAndPorts(corefile)
+	if err != nil {
+		t.Fatalf("Could not get CoreDNS serving instance: %s", err)
+	}
+	defer i.Stop()
+
+	// Start caching forward CoreDNS that we want to test.
+	corefile = `example.org:0 {
+		forward . ` + udp + `
+		cache 10
+	}`
+
+	i, udp, _, err = CoreDNSServerAndPorts(corefile)
+	if err != nil {
+		t.Fatalf("Could not get CoreDNS serving instance: %s", err)
+	}
+	defer i.Stop()
+
+	m := new(dns.Msg)
+	m.SetQuestion("example.org.", dns.TypeA)
+	resp, err := dns.Exchange(m, udp)
+	if err != nil {
+		t.Fatalf("Expected to receive reply, but didn't: %s", err)
+	}
+	if len(resp.Extra) == 0 {
+		return
+	}
+
+	if resp.Extra[0].Header().Rrtype == dns.TypeOPT {
+		t.Fatalf("Expected no OPT RR, but got: %s", resp.Extra[0])
+	}
+	t.Fatalf("Expected empty additional section, got %v", resp.Extra)
 }
