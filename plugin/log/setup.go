@@ -5,7 +5,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/response"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 	"github.com/miekg/dns"
 )
 

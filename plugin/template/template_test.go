@@ -11,7 +11,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/fall"
 	"github.com/coredns/coredns/plugin/test"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 	"github.com/miekg/dns"
 )
 

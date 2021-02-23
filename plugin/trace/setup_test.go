@@ -3,7 +3,7 @@ package trace
 import (
 	"testing"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 func TestTraceParse(t *testing.T) {

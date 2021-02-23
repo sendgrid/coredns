@@ -10,7 +10,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 func init() {

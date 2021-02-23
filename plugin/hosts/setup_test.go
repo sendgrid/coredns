@@ -5,7 +5,7 @@ import (
 
 	"github.com/coredns/coredns/plugin/pkg/fall"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 func TestHostsParse(t *testing.T) {

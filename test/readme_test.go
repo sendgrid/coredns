@@ -10,7 +10,7 @@ import (
 
 	"github.com/coredns/coredns/core/dnsserver"
 
-	"github.com/caddyserver/caddy"
+	"github.com/mholt/caddy"
 )
 
 // As we use the filesystem as-is, these files need to exist ON DISK for the readme test to work. This is especially
