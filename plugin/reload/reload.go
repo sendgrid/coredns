@@ -4,7 +4,7 @@ import (
 	"crypto/md5"
 	"time"
 
-	"github.com/mholt/caddy"
+	"github.com/caddyserver/caddy"
 )
 
 // reload periodically checks if the Corefile has changed, and reloads if so

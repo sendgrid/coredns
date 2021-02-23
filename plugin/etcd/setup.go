@@ -11,8 +11,8 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/upstream"
 	"github.com/coredns/coredns/plugin/proxy"
 
+	"github.com/caddyserver/caddy"
 	etcdcv3 "github.com/coreos/etcd/clientv3"
-	"github.com/mholt/caddy"
 )
 
 var log = clog.NewWithPlugin("etcd")
