@@ -1,12 +1,17 @@
 package object
 
 import (
+	"fmt"
+
 	api "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1beta1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Endpoints is a stripped down api.Endpoints with only the items we need for CoreDNS.
 type Endpoints struct {
+	// Don't add new fields to this struct without talking to the CoreDNS maintainers.
 	Version   string
 	Name      string
 	Namespace string
@@ -39,16 +44,15 @@ type EndpointPort struct {
 	Protocol string
 }
 
-// EndpointsKey return a string using for the index.
+// EndpointsKey returns a string using for the index.
 func EndpointsKey(name, namespace string) string { return name + "." + namespace }
 
-// ToEndpoints converts an api.Service to a *Service.
-func ToEndpoints(obj interface{}) interface{} {
+// ToEndpoints converts an *api.Endpoints to a *Endpoints.
+func ToEndpoints(obj meta.Object) (meta.Object, error) {
 	end, ok := obj.(*api.Endpoints)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("unexpected object %v", obj)
 	}
-
 	e := &Endpoints{
 		Version:   end.GetResourceVersion(),
 		Name:      end.GetName(),
@@ -61,7 +65,7 @@ func ToEndpoints(obj interface{}) interface{} {
 			Addresses: make([]EndpointAddress, len(eps.Addresses)),
 		}
 		if len(eps.Ports) == 0 {
-			// Add sentinal if there are no ports.
+			// Add sentinel if there are no ports.
 			sub.Ports = []EndpointPort{{Port: -1}}
 		} else {
 			sub.Ports = make([]EndpointPort, len(eps.Ports))
@@ -94,7 +98,52 @@ func ToEndpoints(obj interface{}) interface{} {
 
 	*end = api.Endpoints{}
 
-	return e
+	return e, nil
+}
+
+// EndpointSliceToEndpoints converts a *discovery.EndpointSlice to a *Endpoints.
+func EndpointSliceToEndpoints(obj meta.Object) (meta.Object, error) {
+	ends, ok := obj.(*discovery.EndpointSlice)
+	if !ok {
+		return nil, fmt.Errorf("unexpected object %v", obj)
+	}
+	e := &Endpoints{
+		Version:   ends.GetResourceVersion(),
+		Name:      ends.GetName(),
+		Namespace: ends.GetNamespace(),
+		Index:     EndpointsKey(ends.Labels[discovery.LabelServiceName], ends.GetNamespace()),
+		Subsets:   make([]EndpointSubset, 1),
+	}
+
+	if len(ends.Ports) == 0 {
+		// Add sentinel if there are no ports.
+		e.Subsets[0].Ports = []EndpointPort{{Port: -1}}
+	} else {
+		e.Subsets[0].Ports = make([]EndpointPort, len(ends.Ports))
+		for k, p := range ends.Ports {
+			ep := EndpointPort{Port: *p.Port, Name: *p.Name, Protocol: string(*p.Protocol)}
+			e.Subsets[0].Ports[k] = ep
+		}
+	}
+
+	for _, end := range ends.Endpoints {
+		for _, a := range end.Addresses {
+			ea := EndpointAddress{IP: a}
+			if end.Hostname != nil {
+				ea.Hostname = *end.Hostname
+			}
+			if end.TargetRef != nil {
+				ea.TargetRefName = end.TargetRef.Name
+			}
+			// EndpointSlice does not contain NodeName, leave blank
+			e.Subsets[0].Addresses = append(e.Subsets[0].Addresses, ea)
+			e.IndexIP = append(e.IndexIP, a)
+		}
+	}
+
+	*ends = discovery.EndpointSlice{}
+
+	return e, nil
 }
 
 // CopyWithoutSubsets copies e, without the subsets.

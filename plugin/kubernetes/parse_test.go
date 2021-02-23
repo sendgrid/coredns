@@ -31,13 +31,13 @@ func TestParseRequest(t *testing.T) {
 		m.SetQuestion(tc.query, dns.TypeA)
 		state := request.Request{Zone: zone, Req: m}
 
-		r, e := parseRequest(state)
+		r, e := parseRequest(state.Name(), state.Zone)
 		if e != nil {
 			t.Errorf("Test %d, expected no error, got '%v'.", i, e)
 		}
 		rs := r.String()
 		if rs != tc.expected {
-			t.Errorf("Test %d, expected (stringyfied) recordRequest: %s, got %s", i, tc.expected, rs)
+			t.Errorf("Test %d, expected (stringified) recordRequest: %s, got %s", i, tc.expected, rs)
 		}
 	}
 }
@@ -53,7 +53,7 @@ func TestParseInvalidRequest(t *testing.T) {
 		m.SetQuestion(query, dns.TypeA)
 		state := request.Request{Zone: zone, Req: m}
 
-		if _, e := parseRequest(state); e == nil {
+		if _, e := parseRequest(state.Name(), state.Zone); e == nil {
 			t.Errorf("Test %d: expected error from %s, got none", i, query)
 		}
 	}

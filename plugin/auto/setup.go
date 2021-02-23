@@ -4,27 +4,20 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"time"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/metrics"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
-	"github.com/coredns/coredns/plugin/pkg/parse"
 	"github.com/coredns/coredns/plugin/pkg/upstream"
-
-	"github.com/mholt/caddy"
+	"github.com/coredns/coredns/plugin/transfer"
 )
 
 var log = clog.NewWithPlugin("auto")
 
-func init() {
-	caddy.RegisterPlugin("auto", caddy.Plugin{
-		ServerType: "dns",
-		Action:     setup,
-	})
-}
+func init() { plugin.Register("auto", setup) }
 
 func setup(c *caddy.Controller) error {
 	a, err := autoParse(c)
@@ -34,10 +27,13 @@ func setup(c *caddy.Controller) error {
 
 	c.OnStartup(func() error {
 		m := dnsserver.GetConfig(c).Handler("prometheus")
-		if m == nil {
-			return nil
+		if m != nil {
+			(&a).metrics = m.(*metrics.Metrics)
 		}
-		(&a).metrics = m.(*metrics.Metrics)
+		t := dnsserver.GetConfig(c).Handler("transfer")
+		if t != nil {
+			(&a).transfer = t.(*transfer.Transfer)
+		}
 		return nil
 	})
 
@@ -50,7 +46,7 @@ func setup(c *caddy.Controller) error {
 		}
 
 		go func() {
-			ticker := time.NewTicker(a.loader.duration)
+			ticker := time.NewTicker(a.loader.ReloadInterval)
 			for {
 				select {
 				case <-walkChan:
@@ -77,9 +73,14 @@ func setup(c *caddy.Controller) error {
 }
 
 func autoParse(c *caddy.Controller) (Auto, error) {
+	nilInterval := -1 * time.Second
 	var a = Auto{
-		loader: loader{template: "${1}", re: regexp.MustCompile(`db\.(.*)`), duration: 60 * time.Second},
-		Zones:  &Zones{},
+		loader: loader{
+			template:       "${1}",
+			re:             regexp.MustCompile(`db\.(.*)`),
+			ReloadInterval: nilInterval,
+		},
+		Zones: &Zones{},
 	}
 
 	config := dnsserver.GetConfig(c)
@@ -96,10 +97,11 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 		for i := range a.Zones.origins {
 			a.Zones.origins[i] = plugin.Host(a.Zones.origins[i]).Normalize()
 		}
+		a.loader.upstream = upstream.New()
 
 		for c.NextBlock() {
 			switch c.Val() {
-			case "directory": // directory DIR [REGEXP [TEMPLATE] [DURATION]]
+			case "directory": // directory DIR [REGEXP TEMPLATE]
 				if !c.NextArg() {
 					return a, c.ArgErr()
 				}
@@ -116,7 +118,7 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 					}
 				}
 
-				// regexp
+				// regexp template
 				if c.NextArg() {
 					a.loader.re, err = regexp.Compile(c.Val())
 					if err != nil {
@@ -125,23 +127,15 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 					if a.loader.re.NumSubexp() == 0 {
 						return a, c.Errf("Need at least one sub expression")
 					}
-				}
 
-				// template
-				if c.NextArg() {
+					if !c.NextArg() {
+						return a, c.ArgErr()
+					}
 					a.loader.template = rewriteToExpand(c.Val())
 				}
 
-				// duration
 				if c.NextArg() {
-					i, err := strconv.Atoi(c.Val())
-					if err != nil {
-						return a, err
-					}
-					if i < 1 {
-						i = 1
-					}
-					a.loader.duration = time.Duration(i) * time.Second
+					return Auto{}, c.ArgErr()
 				}
 
 			case "reload":
@@ -151,30 +145,19 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 				}
 				a.loader.ReloadInterval = d
 
-			case "no_reload":
-				a.loader.ReloadInterval = 0
-
 			case "upstream":
-				args := c.RemainingArgs()
-				if len(args) == 0 {
-					return a, c.ArgErr()
-				}
-				var err error
-				a.loader.upstream, err = upstream.New(args)
-				if err != nil {
-					return a, err
-				}
+				// remove soon
+				c.RemainingArgs() // eat remaining args
 
 			default:
-				t, _, e := parse.Transfer(c, false)
-				if e != nil {
-					return a, e
-				}
-				if t != nil {
-					a.loader.transferTo = append(a.loader.transferTo, t...)
-				}
+				return Auto{}, c.Errf("unknown property '%s'", c.Val())
 			}
 		}
 	}
+
+	if a.loader.ReloadInterval == nilInterval {
+		a.loader.ReloadInterval = 60 * time.Second
+	}
+
 	return a, nil
 }

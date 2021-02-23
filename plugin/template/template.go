@@ -8,6 +8,7 @@ import (
 	gotmpl "text/template"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/metadata"
 	"github.com/coredns/coredns/plugin/metrics"
 	"github.com/coredns/coredns/plugin/pkg/fall"
 	"github.com/coredns/coredns/plugin/pkg/upstream"
@@ -47,11 +48,25 @@ type templateData struct {
 	Type     string
 	Message  *dns.Msg
 	Question *dns.Question
+	Remote   string
+	md       map[string]metadata.Func
+}
+
+func (data *templateData) Meta(metaName string) string {
+	if data.md == nil {
+		return ""
+	}
+
+	if f, ok := data.md[metaName]; ok {
+		return f()
+	}
+
+	return ""
 }
 
 // ServeDNS implements the plugin.Handler interface.
 func (h Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-	state := request.Request{W: w, Req: r, Context: ctx}
+	state := request.Request{W: w, Req: r}
 
 	zone := plugin.Zones(h.Zones).Matches(state.Name())
 	if zone == "" {
@@ -59,7 +74,7 @@ func (h Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 	}
 
 	for _, template := range h.Templates {
-		data, match, fthrough := template.match(state, zone)
+		data, match, fthrough := template.match(ctx, state)
 		if !match {
 			if !fthrough {
 				return dns.RcodeNameError, nil
@@ -75,7 +90,7 @@ func (h Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 
 		msg := new(dns.Msg)
 		msg.SetReply(r)
-		msg.Authoritative, msg.RecursionAvailable = true, true
+		msg.Authoritative = true
 		msg.Rcode = template.rcode
 
 		for _, answer := range template.answer {
@@ -85,7 +100,7 @@ func (h Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 			}
 			msg.Answer = append(msg.Answer, rr)
 			if template.upstream != nil && (state.QType() == dns.TypeA || state.QType() == dns.TypeAAAA) && rr.Header().Rrtype == dns.TypeCNAME {
-				up, _ := template.upstream.Lookup(state, rr.(*dns.CNAME).Target, state.QType())
+				up, _ := template.upstream.Lookup(ctx, state, rr.(*dns.CNAME).Target, state.QType())
 				msg.Answer = append(msg.Answer, up.Answer...)
 			}
 		}
@@ -108,13 +123,13 @@ func (h Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 		return template.rcode, nil
 	}
 
-	return h.Next.ServeDNS(ctx, w, r)
+	return plugin.NextOrFailure(h.Name(), h.Next, ctx, w, r)
 }
 
 // Name implements the plugin.Handler interface.
 func (h Handler) Name() string { return "template" }
 
-func executeRRTemplate(server, section string, template *gotmpl.Template, data templateData) (dns.RR, error) {
+func executeRRTemplate(server, section string, template *gotmpl.Template, data *templateData) (dns.RR, error) {
 	buffer := &bytes.Buffer{}
 	err := template.Execute(buffer, data)
 	if err != nil {
@@ -129,11 +144,11 @@ func executeRRTemplate(server, section string, template *gotmpl.Template, data t
 	return rr, nil
 }
 
-func (t template) match(state request.Request, zone string) (templateData, bool, bool) {
+func (t template) match(ctx context.Context, state request.Request) (*templateData, bool, bool) {
 	q := state.Req.Question[0]
-	data := templateData{}
+	data := &templateData{md: metadata.ValueFuncs(ctx), Remote: state.IP()}
 
-	zone = plugin.Zones(t.zones).Matches(state.Name())
+	zone := plugin.Zones(t.zones).Matches(state.Name())
 	if zone == "" {
 		return data, false, true
 	}

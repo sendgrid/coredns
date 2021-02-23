@@ -9,16 +9,14 @@
 The *auto* plugin is used for an "old-style" DNS server. It serves from a preloaded file that exists
 on disk. If the zone file contains signatures (i.e. is signed, i.e. using DNSSEC) correct DNSSEC answers
 are returned. Only NSEC is supported! If you use this setup *you* are responsible for re-signing the
-zonefile. New or changed zones are automatically picked up from disk.
+zonefile. New or changed zones are automatically picked up from disk only when SOA's serial changes. If the zones are not updated via a zone transfer, the serial must be manually changed.
 
 ## Syntax
 
 ~~~
 auto [ZONES...] {
-    directory DIR [REGEXP ORIGIN_TEMPLATE [TIMEOUT]]
+    directory DIR [REGEXP ORIGIN_TEMPLATE]
     reload DURATION
-    no_reload
-    upstream [ADDRESS...]
 }
 ~~~
 
@@ -29,17 +27,12 @@ are used.
   used to extract the origin. **ORIGIN_TEMPLATE** will be used as a template for the origin. Strings
   like `{<number>}` are replaced with the respective matches in the file name, e.g. `{1}` is the
   first match, `{2}` is the second. The default is: `db\.(.*)  {1}` i.e. from a file with the
-  name `db.example.com`, the extracted origin will be `example.com`. **TIMEOUT** specifies how often
-  CoreDNS should scan the directory; the default is every 60 seconds. This value is in seconds.
-  The minimum value is 1 second.
-* `reload` interval to perform reload of zone if SOA version changes. Default is one minute.
+  name `db.example.com`, the extracted origin will be `example.com`.
+* `reload` interval to perform reloads of zones if SOA version changes and zonefiles. It specifies how often CoreDNS should scan the directory to watch for file removal and addition. Default is one minute.
   Value of `0` means to not scan for changes and reload. eg. `30s` checks zonefile every 30 seconds
   and reloads zone when serial changes.
-* `no_reload` deprecated. Sets reload to 0.
-* `upstream` defines upstream resolvers to be used resolve external names found (think CNAMEs)
-  pointing to external names. **ADDRESS** can be an IP address, an IP:port or a string pointing to
-  a file that is structured as /etc/resolv.conf. If no **ADDRESS** is given, CoreDNS will resolve CNAMEs
-  against itself.
+
+For enabling zone transfers look at the *transfer* plugin.
 
 All directives from the *file* plugin are supported. Note that *auto* will load all zones found,
 even though the directive might only receive queries for a specific zone. I.e:
@@ -60,11 +53,13 @@ Load `org` domains from `/etc/coredns/zones/org` and allow transfers to the inte
 notifies to 10.240.1.1
 
 ~~~ corefile
-. {
-    auto org {
+org {
+    auto {
         directory /etc/coredns/zones/org
-        transfer to *
-        transfer to 10.240.1.1
+    }
+    transfer {
+        to *
+        to 10.240.1.1
     }
 }
 ~~~
@@ -75,7 +70,13 @@ where `example.org` is the origin. Scan every 45 seconds.
 ~~~ corefile
 org {
     auto {
-        directory /etc/coredns/zones/org www\.db\.(.*) {1} 45
+        directory /etc/coredns/zones/org www\.db\.(.*) {1}
+        reload 45s
     }
 }
 ~~~
+
+## Also
+
+Use the *root* plugin to help you specify the location of the zone files. See the *transfer* plugin
+to enable outgoing zone transfers.

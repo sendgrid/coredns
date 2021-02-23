@@ -9,21 +9,17 @@
 The *forward* plugin re-uses already opened sockets to the upstreams. It supports UDP, TCP and
 DNS-over-TLS and uses in band health checking.
 
-When it detects an error a health check is performed. This checks runs in a loop, every *0.5s*, for
-as long as the upstream reports unhealthy. Once healthy we stop health checking (until the next
-error). The health checks use a recursive DNS query (`. IN NS`) to get upstream health. Any response
-that is not a network error (REFUSED, NOTIMPL, SERVFAIL, etc) is taken as a healthy upstream. The
-health check uses the same protocol as specified in **TO**. If `max_fails` is set to 0, no checking
-is performed and upstreams will always be considered healthy.
+When it detects an error a health check is performed. This checks runs in a loop, performing each
+check at a *0.5s* interval for as long as the upstream reports unhealthy. Once healthy we stop
+health checking (until the next error). The health checks use a recursive DNS query (`. IN NS`)
+to get upstream health. Any response that is not a network error (REFUSED, NOTIMPL, SERVFAIL, etc)
+is taken as a healthy upstream. The health check uses the same protocol as specified in **TO**. If
+`max_fails` is set to 0, no checking is performed and upstreams will always be considered healthy.
 
 When *all* upstreams are down it assumes health checking as a mechanism has failed and will try to
 connect to a random upstream (which may or may not work).
 
 This plugin can only be used once per Server Block.
-
-How does *forward* relate to *proxy*? This plugin is the "new" version of *proxy* and is faster
-because it re-uses connections to the upstreams. It also does in-band health checks - using DNS
-instead of HTTP. Since it is newer it has a little less (production) mileage on it.
 
 ## Syntax
 
@@ -53,7 +49,8 @@ forward FROM TO... {
     tls CERT KEY CA
     tls_servername NAME
     policy random|round_robin|sequential
-    health_check DURATION
+    health_check DURATION [no_rec]
+    max_concurrent MAX
 }
 ~~~
 
@@ -83,31 +80,44 @@ forward FROM TO... {
   but they have to use the same `tls_servername`. E.g. mixing 9.9.9.9 (QuadDNS) with 1.1.1.1
   (Cloudflare) will not work.
 * `policy` specifies the policy to use for selecting upstream servers. The default is `random`.
-* `health_check`, use a different **DURATION** for health checking, the default duration is 0.5s.
+  * `random` is a policy that implements random upstream selection.
+  * `round_robin` is a policy that selects hosts based on round robin ordering.
+  * `sequential` is a policy that selects hosts based on sequential ordering.
+* `health_check` configure the behaviour of health checking of the upstream servers
+  * `<duration>` - use a different duration for health checking, the default duration is 0.5s.
+  * `no_rec` - optional argument that sets the RecursionDesired-flag of the dns-query used in health checking to `false`.
+    The flag is default `true`.
+* `max_concurrent` **MAX** will limit the number of concurrent queries to **MAX**.  Any new query that would
+  raise the number of concurrent queries above the **MAX** will result in a REFUSED response. This
+  response does not count as a health failure. When choosing a value for **MAX**, pick a number
+  at least greater than the expected *upstream query rate* * *latency* of the upstream servers.
+  As an upper bound for **MAX**, consider that each concurrent query will use about 2kb of memory.
 
 Also note the TLS config is "global" for the whole forwarding proxy if you need a different
 `tls-name` for different upstreams you're out of luck.
 
-On each endpoint, the timeouts of the communication are set by default and automatically tuned depending early results.
+On each endpoint, the timeouts for communication are set as follows:
 
-* dialTimeout by default is 30 sec, and can decrease automatically down to 100ms
-* readTimeout by default is 2 sec, and can decrease automatically down to 200ms
+* The dial timeout by default is 30s, and can decrease automatically down to 100ms based on early results.
+* The read timeout is static at 2s.
 
 ## Metrics
 
-If monitoring is enabled (via the *prometheus* directive) then the following metric are exported:
+If monitoring is enabled (via the *prometheus* plugin) then the following metric are exported:
 
-* `coredns_forward_request_duration_seconds{to}` - duration per upstream interaction.
-* `coredns_forward_request_count_total{to}` - query count per upstream.
-* `coredns_forward_response_rcode_total{to, rcode}` - count of RCODEs per upstream.
-* `coredns_forward_healthcheck_failure_count_total{to}` - number of failed health checks per upstream.
-* `coredns_forward_healthcheck_broken_count_total{}` - counter of when all upstreams are unhealthy,
+* `coredns_forward_requests_total{to}` - query count per upstream.
+* `coredns_forward_responses_total{to}` - Counter of responses received per upstream.
+* `coredns_forward_request_duration_seconds{to, rcode, type}` - duration per upstream, RCODE, type
+* `coredns_forward_responses_total{to, rcode}` - count of RCODEs per upstream.
+* `coredns_forward_healthcheck_failures_total{to}` - number of failed health checks per upstream.
+* `coredns_forward_healthcheck_broken_total{}` - counter of when all upstreams are unhealthy,
   and we are randomly (this always uses the `random` policy) spraying to an upstream.
-* `coredns_forward_socket_count_total{to}` - number of cached sockets per upstream.
-
-Where `to` is one of the upstream servers (**TO** from the config), `proto` is the protocol used by
-the incoming query ("tcp" or "udp"), and family the transport family ("1" for IPv4, and "2" for
-IPv6).
+* `coredns_forward_max_concurrent_rejects_total{}` - counter of the number of queries rejected because the
+  number of concurrent queries were at maximum.
+* `coredns_forward_conn_cache_hits_total{to, proto}` - counter of connection cache hits per upstream and protocol.
+* `coredns_forward_conn_cache_misses_total{to, proto}` - counter of connection cache misses per upstream and protocol.
+Where `to` is one of the upstream servers (**TO** from the config), `rcode` is the returned RCODE
+from the upstream, `proto` is the transport protocol like `udp`, `tcp`, `tcp-tls`.
 
 ## Examples
 
@@ -147,7 +157,7 @@ Proxy everything except `example.org` using the host's `resolv.conf`'s nameserve
 }
 ~~~
 
-Proxy all requests to 9.9.9.9 using the DNS-over-TLS protocol, and cache every answer for up to 30
+Proxy all requests to 9.9.9.9 using the DNS-over-TLS (DoT) protocol, and cache every answer for up to 30
 seconds. Note the `tls_servername` is mandatory if you want a working setup, as 9.9.9.9 can't be
 used in the TLS negotiation. Also set the health check duration to 5s to not completely swamp the
 service with health checks.
@@ -167,18 +177,33 @@ Or with multiple upstreams from the same provider
 ~~~ corefile
 . {
     forward . tls://1.1.1.1 tls://1.0.0.1 {
-       tls_servername loudflare-dns.com
+       tls_servername cloudflare-dns.com
        health_check 5s
     }
     cache 30
 }
 ~~~
 
-## Bugs
+Or when you have multiple DoT upstreams with different `tls_servername`s, you can do the following:
 
-The TLS config is global for the whole forwarding proxy if you need a different `tls_servername` for
-different upstreams you're out of luck.
+~~~ corefile
+. {
+    forward . 127.0.0.1:5301 127.0.0.1:5302
+}
 
-## Also See
+.:5301 {
+    forward . 8.8.8.8 8.8.4.4 {
+        tls_servername dns.google
+    }
+}
+
+.:5302 {
+    forward . 1.1.1.1 1.0.0.1 {
+        tls_servername cloudflare-dns.com
+    }
+}
+~~~
+
+## See Also
 
 [RFC 7858](https://tools.ietf.org/html/rfc7858) for DNS over TLS.

@@ -29,7 +29,7 @@ const (
 	Continue = "continue"
 )
 
-// Rewrite is plugin to rewrite requests internally before being handled.
+// Rewrite is a plugin to rewrite requests internally before being handled.
 type Rewrite struct {
 	Next     plugin.Handler
 	Rules    []Rule
@@ -44,16 +44,16 @@ func (rw Rewrite) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 	for _, rule := range rw.Rules {
 		switch result := rule.Rewrite(ctx, state); result {
 		case RewriteDone:
-			if !validName(state.Req.Question[0].Name) {
-				x := state.Req.Question[0].Name
-				log.Errorf("Invalid name after rewrite: %s", x)
+			if _, ok := dns.IsDomainName(state.Req.Question[0].Name); !ok {
+				err := fmt.Errorf("invalid name after rewrite: %s", state.Req.Question[0].Name)
 				state.Req.Question[0] = wr.originalQuestion
-				return dns.RcodeServerFailure, fmt.Errorf("invalid name after rewrite: %s", x)
+				return dns.RcodeServerFailure, err
 			}
-			respRule := rule.GetResponseRule()
-			if respRule.Active == true {
-				wr.ResponseRewrite = true
-				wr.ResponseRules = append(wr.ResponseRules, respRule)
+			for _, respRule := range rule.GetResponseRules() {
+				if respRule.Active {
+					wr.ResponseRewrite = true
+					wr.ResponseRules = append(wr.ResponseRules, respRule)
+				}
 			}
 			if rule.Mode() == Stop {
 				if rw.noRevert {
@@ -62,7 +62,6 @@ func (rw Rewrite) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 				return plugin.NextOrFailure(rw.Name(), rw.Next, ctx, wr, r)
 			}
 		case RewriteIgnored:
-			break
 		}
 	}
 	if rw.noRevert || len(wr.ResponseRules) == 0 {
@@ -80,8 +79,8 @@ type Rule interface {
 	Rewrite(ctx context.Context, state request.Request) Result
 	// Mode returns the processing mode stop or continue.
 	Mode() string
-	// GetResponseRule returns the rule to rewrite response with, if any.
-	GetResponseRule() ResponseRule
+	// GetResponseRules returns rules to rewrite response with, if any.
+	GetResponseRules() []ResponseRule
 }
 
 func newRule(args ...string) (Rule, error) {
@@ -128,7 +127,7 @@ func newRule(args ...string) (Rule, error) {
 	case "edns0":
 		return newEdns0Rule(mode, args[startArg:]...)
 	case "ttl":
-		return newTtlRule(mode, args[startArg:]...)
+		return newTTLRule(mode, args[startArg:]...)
 	default:
 		return nil, fmt.Errorf("invalid rule type %q", args[0])
 	}

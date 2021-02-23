@@ -3,9 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/coredns/coredns/plugin/proxy"
 	"github.com/coredns/coredns/plugin/test"
-	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
 )
@@ -13,7 +11,7 @@ import (
 func TestZoneSRVAdditional(t *testing.T) {
 	t.Parallel()
 
-	name, rm, err := TempFile(".", exampleOrg)
+	name, rm, err := test.TempFile(".", exampleOrg)
 	if err != nil {
 		t.Fatalf("Failed to create zone: %s", err)
 	}
@@ -21,19 +19,18 @@ func TestZoneSRVAdditional(t *testing.T) {
 
 	// Corefile with for example without proxy section.
 	corefile := `example.org:0 {
-       file ` + name + `
-}
-`
+		file ` + name + `
+	}`
+
 	i, udp, _, err := CoreDNSServerAndPorts(corefile)
 	if err != nil {
 		t.Fatalf("Could not get CoreDNS serving instance: %s", err)
 	}
 	defer i.Stop()
 
-	p := proxy.NewLookup([]string{udp})
-	state := request.Request{W: &test.ResponseWriter{}, Req: new(dns.Msg)}
-
-	resp, err := p.Lookup(state, "service.example.org.", dns.TypeSRV)
+	m := new(dns.Msg)
+	m.SetQuestion("service.example.org.", dns.TypeSRV)
+	resp, err := dns.Exchange(m, udp)
 	if err != nil {
 		t.Fatalf("Expected to receive reply, but didn't: %s", err)
 	}

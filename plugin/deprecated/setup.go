@@ -1,6 +1,6 @@
 // Package deprecated is used when we deprecated plugin. In plugin.cfg just go from
 //
-// startup:github.com/mholt/caddy/startupshutdown
+// startup:github.com/coredns/caddy/startupshutdown
 //
 // To:
 //
@@ -14,13 +14,12 @@ package deprecated
 import (
 	"errors"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/plugin"
-
-	"github.com/mholt/caddy"
 )
 
 // removed has the names of the plugins that need to error on startup.
-var removed = []string{"reverse"}
+var removed = []string{""}
 
 func setup(c *caddy.Controller) error {
 	c.Next()
@@ -29,10 +28,7 @@ func setup(c *caddy.Controller) error {
 }
 
 func init() {
-	for _, plugin := range removed {
-		caddy.RegisterPlugin(plugin, caddy.Plugin{
-			ServerType: "dns",
-			Action:     setup,
-		})
+	for _, plug := range removed {
+		plugin.Register(plug, setup)
 	}
 }

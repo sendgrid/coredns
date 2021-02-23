@@ -3,14 +3,12 @@ package test
 import (
 	"testing"
 
-	"github.com/coredns/coredns/plugin/proxy"
 	mtest "github.com/coredns/coredns/plugin/test"
-	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
 )
 
-// Using miek.nl here because this is the easiest zone to get access to and it's masters
+// Using miek.nl here because this is the easiest zone to get access to and its masters
 // run both NSD and BIND9, making checks like "what should we actually return" super easy.
 var dsTestCases = []mtest.Case{
 	{
@@ -30,16 +28,15 @@ var dsTestCases = []mtest.Case{
 
 func TestLookupDS(t *testing.T) {
 	t.Parallel()
-	name, rm, err := TempFile(".", miekNL)
+	name, rm, err := mtest.TempFile(".", miekNL)
 	if err != nil {
 		t.Fatalf("Failed to create zone: %s", err)
 	}
 	defer rm()
 
 	corefile := `miek.nl:0 {
-       file ` + name + `
-}
-`
+		file ` + name + `
+	}`
 
 	i, udp, _, err := CoreDNSServerAndPorts(corefile)
 	if err != nil {
@@ -47,15 +44,16 @@ func TestLookupDS(t *testing.T) {
 	}
 	defer i.Stop()
 
-	p := proxy.NewLookup([]string{udp})
-	state := request.Request{W: &mtest.ResponseWriter{}, Req: new(dns.Msg)}
-
 	for _, tc := range dsTestCases {
-		resp, err := p.Lookup(state, tc.Qname, tc.Qtype)
+		m := new(dns.Msg)
+		m.SetQuestion(tc.Qname, tc.Qtype)
+		resp, err := dns.Exchange(m, udp)
 		if err != nil || resp == nil {
 			t.Fatalf("Expected to receive reply, but didn't for %s %d", tc.Qname, tc.Qtype)
 		}
 
-		mtest.SortAndCheck(t, resp, tc)
+		if err := mtest.SortAndCheck(resp, tc); err != nil {
+			t.Error(err)
+		}
 	}
 }

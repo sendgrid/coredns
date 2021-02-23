@@ -3,9 +3,9 @@ Package autopath implements autopathing. This is a hack; it shortcuts the
 client's search path resolution by performing these lookups on the server...
 
 The server has a copy (via AutoPathFunc) of the client's search path and on
-receiving a query it first establish if the suffix matches the FIRST configured
+receiving a query it first establishes if the suffix matches the FIRST configured
 element. If no match can be found the query will be forwarded up the plugin
-chain without interference (iff 'fallthrough' has been set).
+chain without interference (if, and only if, 'fallthrough' has been set).
 
 If the query is deemed to fall in the search path the server will perform the
 queries with each element of the search path appended in sequence until a
@@ -20,7 +20,7 @@ through the search path.
 
 It is assume the search path ordering is identical between server and client.
 
-Midldeware implementing autopath, must have a function called `AutoPath` of type
+Plugins implementing autopath, must have a function called `AutoPath` of type
 autopath.Func. Note the searchpath must be ending with the empty string.
 
 I.e:
@@ -54,7 +54,7 @@ type AutoPather interface {
 	AutoPath(request.Request) []string
 }
 
-// AutoPath perform autopath: service side search path completion.
+// AutoPath performs autopath: service side search path completion.
 type AutoPath struct {
 	Next  plugin.Handler
 	Zones []string
