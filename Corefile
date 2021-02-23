@@ -1,0 +1,12 @@
+. {
+    forward . 8.8.8.8:53
+    cache {
+		 success 172800
+		 denial 2500
+	}
+	errors {
+		consolidate 5m ".* i/o timeout$"
+		consolidate 30s "^Failed to .+"
+	}
+	log
+} 
