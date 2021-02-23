@@ -12,14 +12,12 @@ The *template* plugin allows you to dynamically respond to queries by just writi
 
 ~~~
 template CLASS TYPE [ZONE...] {
-    [match REGEX...]
-    [answer RR]
-    [additional RR]
-    [authority RR]
-    [...]
-    [rcode CODE]
-    [upstream [ADDRESS...]]
-    [fallthrough [ZONE...]]
+    match REGEX...
+    answer RR
+    additional RR
+    authority RR
+    rcode CODE
+    fallthrough [ZONE...]
 }
 ~~~
 
@@ -30,9 +28,6 @@ template CLASS TYPE [ZONE...] {
 * `answer|additional|authority` **RR** A [RFC 1035](https://tools.ietf.org/html/rfc1035#section-5) style resource record fragment
   built by a [Go template](https://golang.org/pkg/text/template/) that contains the reply.
 * `rcode` **CODE** A response code (`NXDOMAIN, SERVFAIL, ...`). The default is `SUCCESS`.
-* `upstream` [**ADDRESS**...] defines the upstream resolvers used for resolving CNAME.
-  If no **ADDRESS** is given, CoreDNS will resolve CNAMEs against itself. **ADDRESS**
-  can be an IP, an IP:port, or a path to a file structured like resolv.conf.
 * `fallthrough` Continue with the next plugin if the zone matched but no regex matched.
   If specific zones are listed (for example `in-addr.arpa` and `ip6.arpa`), then only queries for
   those zones will be subject to fallthrough.
@@ -53,6 +48,9 @@ Each resource record is a full-featured [Go template](https://golang.org/pkg/tex
 * `.Group` a map of the named capture groups.
 * `.Message` the complete incoming DNS message.
 * `.Question` the matched question section.
+* `.Remote` client’s IP address
+* `.Meta` a function that takes a metadata name and returns the value, if the
+  metadata plugin is enabled. For example, `.Meta "kubernetes/client-namespace"`
 
 The output of the template must be a [RFC 1035](https://tools.ietf.org/html/rfc1035) style resource record (commonly referred to as a "zone file").
 
@@ -62,7 +60,7 @@ The output of the template must be a [RFC 1035](https://tools.ietf.org/html/rfc1
 
 ## Metrics
 
-If monitoring is enabled (via the *prometheus* directive) then the following metrics are exported:
+If monitoring is enabled (via the *prometheus* plugin) then the following metrics are exported:
 
 * `coredns_template_matches_total{server, regex}` the total number of matched requests by regex.
 * `coredns_template_template_failures_total{server, regex,section,template}` the number of times the Go templating failed. Regex, section and template label values can be used to map the error back to the config file.
@@ -95,7 +93,7 @@ The `.invalid` domain is a reserved TLD (see [RFC 2606 Reserved Top Level DNS Na
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template ANY ANY invalid {
       rcode NXDOMAIN
@@ -119,7 +117,7 @@ path (`dc1.example.com`) added.
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template IN ANY example.com.dc1.example.com {
       rcode NXDOMAIN
@@ -132,7 +130,7 @@ A more verbose regex based equivalent would be
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template IN ANY example.com {
       match "example\.com\.(dc1\.example\.com\.)$"
@@ -149,21 +147,21 @@ The regex-based version can do more complex matching/templating while zone-based
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
-    # ip-a-b-c-d.example.com A a.b.c.d
+    # ip-a-b-c-d.example A a.b.c.d
 
     template IN A example {
-      match (^|[.])ip-10-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]example[.]$
-      answer "{{ .Name }} 60 IN A 10.{{ .Group.b }}.{{ .Group.c }}.{{ .Group.d }}"
+      match (^|[.])ip-(?P<a>[0-9]*)-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]example[.]$
+      answer "{{ .Name }} 60 IN A {{ .Group.a }}.{{ .Group.b }}.{{ .Group.c }}.{{ .Group.d }}"
       fallthrough
     }
 
     # d.c.b.a.in-addr.arpa PTR ip-a-b-c-d.example
 
-    template IN PTR 10.in-addr.arpa. {
-      match ^(?P<d>[0-9]*)[.](?P<c>[0-9]*)[.](?P<b>[0-9]*)[.]10[.]in-addr[.]arpa[.]$
-      answer "{{ .Name }} 60 IN PTR ip-10-{{ .Group.b }}-{{ .Group.c }}-{{ .Group.d }}.example.com."
+    template IN PTR in-addr.arpa {
+      match ^(?P<d>[0-9]*)[.](?P<c>[0-9]*)[.](?P<b>[0-9]*)[.](?P<a>[0-9]*)[.]in-addr[.]arpa[.]$
+      answer "{{ .Name }} 60 IN PTR ip-{{ .Group.a }}-{{ .Group.b }}-{{ .Group.c }}-{{ .Group.d }}.example."
     }
 }
 ~~~
@@ -181,7 +179,7 @@ Fallthrough is needed for mixed domains where only some responses are templated.
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template IN A example {
       match "^ip-(?P<a>10)-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]dc[.]example[.]$"
@@ -198,7 +196,7 @@ Named capture groups can be used to template one response for multiple patterns.
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template IN A example {
       match ^ip-10-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]example[.]$
@@ -218,7 +216,7 @@ Named capture groups can be used to template one response for multiple patterns.
 
 ~~~ corefile
 . {
-    proxy . 8.8.8.8
+    forward . 8.8.8.8
 
     template IN A example {
       match ^ip-10-(?P<b>[0-9]*)-(?P<c>[0-9]*)-(?P<d>[0-9]*)[.]example[.]$

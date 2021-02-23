@@ -15,7 +15,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Cache is plugin that looks up responses in a cache and caches replies.
+// Cache is a plugin that looks up responses in a cache and caches replies.
 // It has a success and a denial of existence cache.
 type Cache struct {
 	Next  plugin.Handler
@@ -35,6 +35,8 @@ type Cache struct {
 	prefetch   int
 	duration   time.Duration
 	percentage int
+
+	staleUpTo time.Duration
 
 	// Testing.
 	now func() time.Time
@@ -63,31 +65,21 @@ func New() *Cache {
 // key returns key under which we store the item, -1 will be returned if we don't store the message.
 // Currently we do not cache Truncated, errors zone transfers or dynamic update messages.
 // qname holds the already lowercased qname.
-func key(qname string, m *dns.Msg, t response.Type, do bool) (bool, uint64) {
+func key(qname string, m *dns.Msg, t response.Type) (bool, uint64) {
 	// We don't store truncated responses.
 	if m.Truncated {
 		return false, 0
 	}
-	// Nor errors or Meta or Update
+	// Nor errors or Meta or Update.
 	if t == response.OtherError || t == response.Meta || t == response.Update {
 		return false, 0
 	}
 
-	return true, hash(qname, m.Question[0].Qtype, do)
+	return true, hash(qname, m.Question[0].Qtype)
 }
 
-var one = []byte("1")
-var zero = []byte("0")
-
-func hash(qname string, qtype uint16, do bool) uint64 {
+func hash(qname string, qtype uint16) uint64 {
 	h := fnv.New64()
-
-	if do {
-		h.Write(one)
-	} else {
-		h.Write(zero)
-	}
-
 	h.Write([]byte{byte(qtype >> 8)})
 	h.Write([]byte{byte(qtype)})
 	h.Write([]byte(qname))
@@ -112,13 +104,14 @@ type ResponseWriter struct {
 	state  request.Request
 	server string // Server handling the request.
 
+	do         bool // When true the original request had the DO bit set.
 	prefetch   bool // When true write nothing back to the client.
 	remoteAddr net.Addr
 }
 
 // newPrefetchResponseWriter returns a Cache ResponseWriter to be used in
 // prefetch requests. It ensures RemoteAddr() can be called even after the
-// original connetion has already been closed.
+// original connection has already been closed.
 func newPrefetchResponseWriter(server string, state request.Request, c *Cache) *ResponseWriter {
 	// Resolve the address now, the connection might be already closed when the
 	// actual prefetch request is made.
@@ -150,19 +143,18 @@ func (w *ResponseWriter) RemoteAddr() net.Addr {
 
 // WriteMsg implements the dns.ResponseWriter interface.
 func (w *ResponseWriter) WriteMsg(res *dns.Msg) error {
-	do := false
-	mt, opt := response.Typify(res, w.now().UTC())
-	if opt != nil {
-		do = opt.Do()
-	}
+	mt, _ := response.Typify(res, w.now().UTC())
 
 	// key returns empty string for anything we don't want to cache.
-	hasKey, key := key(w.state.Name(), res, mt, do)
+	hasKey, key := key(w.state.Name(), res, mt)
 
 	msgTTL := dnsutil.MinimalTTL(res, mt)
 	var duration time.Duration
 	if mt == response.NameError || mt == response.NoData {
 		duration = computeTTL(msgTTL, w.minnttl, w.nttl)
+	} else if mt == response.ServerError {
+		// use default ttl which is 5s
+		duration = minTTL
 	} else {
 		duration = computeTTL(msgTTL, w.minpttl, w.pttl)
 	}
@@ -183,18 +175,12 @@ func (w *ResponseWriter) WriteMsg(res *dns.Msg) error {
 	}
 
 	// Apply capped TTL to this reply to avoid jarring TTL experience 1799 -> 8 (e.g.)
+	// We also may need to filter out DNSSEC records, see toMsg() for similar code.
 	ttl := uint32(duration.Seconds())
-	for i := range res.Answer {
-		res.Answer[i].Header().Ttl = ttl
-	}
-	for i := range res.Ns {
-		res.Ns[i].Header().Ttl = ttl
-	}
-	for i := range res.Extra {
-		if res.Extra[i].Header().Rrtype != dns.TypeOPT {
-			res.Extra[i].Header().Ttl = ttl
-		}
-	}
+	res.Answer = filterRRSlice(res.Answer, ttl, w.do, false)
+	res.Ns = filterRRSlice(res.Ns, ttl, w.do, false)
+	res.Extra = filterRRSlice(res.Extra, ttl, w.do, false)
+
 	return w.ResponseWriter.WriteMsg(res)
 }
 
@@ -205,8 +191,12 @@ func (w *ResponseWriter) set(m *dns.Msg, key uint64, mt response.Type, duration 
 	case response.NoError, response.Delegation:
 		i := newItem(m, w.now(), duration)
 		w.pcache.Add(key, i)
+		// when pre-fetching, remove the negative cache entry if it exists
+		if w.prefetch {
+			w.ncache.Remove(key)
+		}
 
-	case response.NameError, response.NoData:
+	case response.NameError, response.NoData, response.ServerError:
 		i := newItem(m, w.now(), duration)
 		w.ncache.Add(key, i)
 

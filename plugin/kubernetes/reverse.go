@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"context"
 	"strings"
 
 	"github.com/coredns/coredns/plugin"
@@ -10,11 +11,11 @@ import (
 )
 
 // Reverse implements the ServiceBackend interface.
-func (k *Kubernetes) Reverse(state request.Request, exact bool, opt plugin.Options) ([]msg.Service, error) {
+func (k *Kubernetes) Reverse(ctx context.Context, state request.Request, exact bool, opt plugin.Options) ([]msg.Service, error) {
 
 	ip := dnsutil.ExtractAddressFromReverse(state.Name())
 	if ip == "" {
-		_, e := k.Records(state, exact)
+		_, e := k.Records(ctx, state, exact)
 		return nil, e
 	}
 
@@ -37,6 +38,7 @@ func (k *Kubernetes) serviceRecordForIP(ip, name string) []msg.Service {
 		return []msg.Service{{Host: domain, TTL: k.ttl}}
 	}
 	// If no cluster ips match, search endpoints
+	var svcs []msg.Service
 	for _, ep := range k.APIConn.EpIndexReverse(ip) {
 		if len(k.Namespaces) > 0 && !k.namespaceExposed(ep.Namespace) {
 			continue
@@ -44,11 +46,11 @@ func (k *Kubernetes) serviceRecordForIP(ip, name string) []msg.Service {
 		for _, eps := range ep.Subsets {
 			for _, addr := range eps.Addresses {
 				if addr.IP == ip {
-					domain := strings.Join([]string{endpointHostname(addr, k.endpointNameMode), ep.Name, ep.Namespace, Svc, k.primaryZone()}, ".")
-					return []msg.Service{{Host: domain, TTL: k.ttl}}
+					domain := strings.Join([]string{endpointHostname(addr, k.endpointNameMode), ep.Index, Svc, k.primaryZone()}, ".")
+					svcs = append(svcs, msg.Service{Host: domain, TTL: k.ttl})
 				}
 			}
 		}
 	}
-	return nil
+	return svcs
 }

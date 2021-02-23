@@ -3,27 +3,24 @@ package kubernetes
 import (
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/plugin/pkg/fall"
 
-	"github.com/caddyserver/caddy"
-	"github.com/coredns/coredns/plugin/proxy"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestKubernetesParse(t *testing.T) {
 	tests := []struct {
-		input                 string        // Corefile data as string
-		shouldErr             bool          // true if test case is expected to produce an error.
-		expectedErrContent    string        // substring from the expected error. Empty for positive cases.
-		expectedZoneCount     int           // expected count of defined zones.
-		expectedNSCount       int           // expected count of namespaces.
-		expectedResyncPeriod  time.Duration // expected resync period value
-		expectedLabelSelector string        // expected label selector value
-		expectedPodMode       string
-		expectedFallthrough   fall.F
-		expectedUpstreams     []string
+		input                          string // Corefile data as string
+		shouldErr                      bool   // true if test case is expected to produce an error.
+		expectedErrContent             string // substring from the expected error. Empty for positive cases.
+		expectedZoneCount              int    // expected count of defined zones.
+		expectedNSCount                int    // expected count of namespaces.
+		expectedLabelSelector          string // expected label selector value
+		expectedNamespaceLabelSelector string // expected namespace label selector value
+		expectedPodMode                string
+		expectedFallthrough            fall.F
 	}{
 		// positive
 		{
@@ -32,11 +29,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local test.local`,
@@ -44,11 +40,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			2,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -57,11 +52,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -71,11 +65,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -85,11 +78,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			1,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -99,39 +91,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			2,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
-		},
-		{
-			`kubernetes coredns.local {
-    resyncperiod 30s
-}`,
-			false,
-			"",
-			1,
-			0,
-			30 * time.Second,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
-		},
-		{
-			`kubernetes coredns.local {
-    resyncperiod 15m
-}`,
-			false,
-			"",
-			1,
-			0,
-			15 * time.Minute,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -141,11 +104,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
 			"environment=prod",
+			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -155,15 +117,40 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
 			"application=nginx,environment in (production,qa,staging)",
+			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
+		},
+		{
+			`kubernetes coredns.local {
+    namespace_labels istio-injection=enabled
+}`,
+			false,
+			"",
+			1,
+			0,
+			"",
+			"istio-injection=enabled",
+			podModeDisabled,
+			fall.Zero,
+		},
+		{
+			`kubernetes coredns.local {
+    namespaces foo bar
+    namespace_labels istio-injection=enabled
+}`,
+			true,
+			"Error during parsing: namespaces and namespace_labels cannot both be set",
+			-1,
+			0,
+			"",
+			"istio-injection=enabled",
+			podModeDisabled,
+			fall.Zero,
 		},
 		{
 			`kubernetes coredns.local test.local {
-    resyncperiod 15m
 	endpoint http://localhost:8080
 	namespaces demo test
     labels environment in (production, staging, qa),application=nginx
@@ -173,11 +160,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			2,
 			2,
-			15 * time.Minute,
 			"application=nginx,environment in (production,qa,staging)",
+			"",
 			podModeDisabled,
 			fall.Root,
-			nil,
 		},
 		// negative
 		{
@@ -188,11 +174,10 @@ func TestKubernetesParse(t *testing.T) {
 			"rong argument count or unexpected line ending",
 			-1,
 			-1,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -202,53 +187,10 @@ func TestKubernetesParse(t *testing.T) {
 			"rong argument count or unexpected line ending",
 			-1,
 			-1,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
-		},
-		{
-			`kubernetes coredns.local {
-    resyncperiod
-}`,
-			true,
-			"rong argument count or unexpected line ending",
-			-1,
-			0,
-			0 * time.Minute,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
-		},
-		{
-			`kubernetes coredns.local {
-    resyncperiod 15
-}`,
-			true,
-			"unable to parse resync duration value",
-			-1,
-			0,
-			0 * time.Second,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
-		},
-		{
-			`kubernetes coredns.local {
-    resyncperiod abc
-}`,
-			true,
-			"unable to parse resync duration value",
-			-1,
-			0,
-			0 * time.Second,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -258,11 +200,10 @@ func TestKubernetesParse(t *testing.T) {
 			"rong argument count or unexpected line ending",
 			-1,
 			0,
-			0 * time.Second,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -272,11 +213,10 @@ func TestKubernetesParse(t *testing.T) {
 			"unable to parse label selector",
 			-1,
 			0,
-			0 * time.Second,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		// pods disabled
 		{
@@ -287,11 +227,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		// pods insecure
 		{
@@ -302,11 +241,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeInsecure,
 			fall.Zero,
-			nil,
 		},
 		// pods verified
 		{
@@ -317,11 +255,10 @@ func TestKubernetesParse(t *testing.T) {
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeVerified,
 			fall.Zero,
-			nil,
 		},
 		// pods invalid
 		{
@@ -332,11 +269,10 @@ func TestKubernetesParse(t *testing.T) {
 			"rong value for pods",
 			-1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeVerified,
 			fall.Zero,
-			nil,
 		},
 		// fallthrough with zones
 		{
@@ -347,41 +283,10 @@ func TestKubernetesParse(t *testing.T) {
 			"rong argument count",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.F{Zones: []string{"ip6.arpa.", "inaddr.arpa.", "foo.com."}},
-			nil,
-		},
-		// Valid upstream
-		{
-			`kubernetes coredns.local {
-	upstream 13.14.15.16:53
-}`,
-			false,
-			"",
-			1,
-			0,
-			defaultResyncPeriod,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			[]string{"13.14.15.16:53"},
-		},
-		// Invalid upstream
-		{
-			`kubernetes coredns.local {
-	upstream 13.14.15.16orange
-}`,
-			true,
-			"not an IP address or file: \"13.14.15.16orange\"",
-			-1,
-			0,
-			defaultResyncPeriod,
-			"",
-			podModeDisabled,
-			fall.Zero,
-			nil,
 		},
 		// More than one Kubernetes not allowed
 		{
@@ -391,11 +296,10 @@ kubernetes cluster.local`,
 			"this plugin",
 			-1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -405,11 +309,10 @@ kubernetes cluster.local`,
 			"Wrong argument count or unexpected line ending after",
 			-1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 		{
 			`kubernetes coredns.local {
@@ -419,11 +322,23 @@ kubernetes cluster.local`,
 			"Wrong argument count or unexpected line ending after",
 			-1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
+		},
+		{
+			`kubernetes coredns.local {
+	kubeconfig file
+}`,
+			false,
+			"",
+			1,
+			0,
+			"",
+			"",
+			podModeDisabled,
+			fall.Zero,
 		},
 		{
 			`kubernetes coredns.local {
@@ -433,11 +348,10 @@ kubernetes cluster.local`,
 			"",
 			1,
 			0,
-			defaultResyncPeriod,
+			"",
 			"",
 			podModeDisabled,
 			fall.Zero,
-			nil,
 		},
 	}
 
@@ -482,12 +396,6 @@ kubernetes cluster.local`,
 			t.Errorf("Test %d: Expected kubernetes controller to be initialized with %d namespaces. Instead found %d namespaces: '%v' for input '%s'", i, test.expectedNSCount, foundNSCount, k8sController.Namespaces, test.input)
 		}
 
-		//    ResyncPeriod
-		foundResyncPeriod := k8sController.opts.resyncPeriod
-		if foundResyncPeriod != test.expectedResyncPeriod {
-			t.Errorf("Test %d: Expected kubernetes controller to be initialized with resync period '%s'. Instead found period '%s' for input '%s'", i, test.expectedResyncPeriod, foundResyncPeriod, test.input)
-		}
-
 		//    Labels
 		if k8sController.opts.labelSelector != nil {
 			foundLabelSelectorString := meta.FormatLabelSelector(k8sController.opts.labelSelector)
@@ -504,31 +412,6 @@ kubernetes cluster.local`,
 		// fallthrough
 		if !k8sController.Fall.Equal(test.expectedFallthrough) {
 			t.Errorf("Test %d: Expected kubernetes controller to be initialized with fallthrough '%v'. Instead found fallthrough '%v' for input '%s'", i, test.expectedFallthrough, k8sController.Fall, test.input)
-		}
-		// upstream
-		var foundUpstreams *[]proxy.Upstream
-		if k8sController.Upstream.Forward != nil {
-			foundUpstreams = k8sController.Upstream.Forward.Upstreams
-		}
-		if test.expectedUpstreams == nil {
-			if foundUpstreams != nil {
-				t.Errorf("Test %d: Expected kubernetes controller to not be initialized with upstreams for input '%s'", i, test.input)
-			}
-		} else {
-			if foundUpstreams == nil {
-				t.Errorf("Test %d: Expected kubernetes controller to be initialized with upstreams for input '%s'", i, test.input)
-			} else {
-				if len(*foundUpstreams) != len(test.expectedUpstreams) {
-					t.Errorf("Test %d: Expected kubernetes controller to be initialized with %d upstreams. Instead found %d upstreams for input '%s'", i, len(test.expectedUpstreams), len(*foundUpstreams), test.input)
-				}
-				for j, want := range test.expectedUpstreams {
-					got := (*foundUpstreams)[j].Select().Name
-					if got != want {
-						t.Errorf("Test %d: Expected kubernetes controller to be initialized with upstream '%s'. Instead found upstream '%s' for input '%s'", i, want, got, test.input)
-					}
-				}
-
-			}
 		}
 	}
 }

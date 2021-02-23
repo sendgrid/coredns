@@ -1,42 +1,49 @@
 package object
 
 import (
+	"errors"
+	"fmt"
+
 	api "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Pod is a stripped down api.Pod with only the items we need for CoreDNS.
 type Pod struct {
+	// Don't add new fields to this struct without talking to the CoreDNS maintainers.
 	Version   string
 	PodIP     string
 	Name      string
 	Namespace string
-	Deleting  bool
 
 	*Empty
 }
 
+var errPodTerminating = errors.New("pod terminating")
+
 // ToPod converts an api.Pod to a *Pod.
-func ToPod(obj interface{}) interface{} {
-	pod, ok := obj.(*api.Pod)
+func ToPod(obj meta.Object) (meta.Object, error) {
+	apiPod, ok := obj.(*api.Pod)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("unexpected object %v", obj)
+	}
+	pod := &Pod{
+		Version:   apiPod.GetResourceVersion(),
+		PodIP:     apiPod.Status.PodIP,
+		Namespace: apiPod.GetNamespace(),
+		Name:      apiPod.GetName(),
+	}
+	t := apiPod.ObjectMeta.DeletionTimestamp
+	if t != nil && !(*t).Time.IsZero() {
+		// if the pod is in the process of termination, return an error so it can be ignored
+		// during add/update event processing
+		return pod, errPodTerminating
 	}
 
-	p := &Pod{
-		Version:   pod.GetResourceVersion(),
-		PodIP:     pod.Status.PodIP,
-		Namespace: pod.GetNamespace(),
-		Name:      pod.GetName(),
-	}
-	t := pod.ObjectMeta.DeletionTimestamp
-	if t != nil {
-		p.Deleting = !(*t).Time.IsZero()
-	}
+	*apiPod = api.Pod{}
 
-	*pod = api.Pod{}
-
-	return p
+	return pod, nil
 }
 
 var _ runtime.Object = &Pod{}
@@ -48,7 +55,6 @@ func (p *Pod) DeepCopyObject() runtime.Object {
 		PodIP:     p.PodIP,
 		Namespace: p.Namespace,
 		Name:      p.Name,
-		Deleting:  p.Deleting,
 	}
 	return p1
 }

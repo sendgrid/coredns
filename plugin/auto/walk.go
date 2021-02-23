@@ -20,7 +20,7 @@ func (a Auto) Walk() error {
 		toDelete[n] = true
 	}
 
-	filepath.Walk(a.loader.directory, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(a.loader.directory, func(path string, info os.FileInfo, _ error) error {
 		if info == nil || info.IsDir() {
 			return nil
 		}
@@ -53,15 +53,14 @@ func (a Auto) Walk() error {
 
 		zo.ReloadInterval = a.loader.ReloadInterval
 		zo.Upstream = a.loader.upstream
-		zo.TransferTo = a.loader.transferTo
 
-		a.Zones.Add(zo, origin)
+		a.Zones.Add(zo, origin, a.transfer)
 
 		if a.metrics != nil {
 			a.metrics.AddZone(origin)
 		}
 
-		zo.Notify()
+		a.transfer.Notify(origin)
 
 		log.Infof("Inserting zone `%s' from: %s", origin, path)
 
@@ -87,7 +86,7 @@ func (a Auto) Walk() error {
 	return nil
 }
 
-// matches matches re to filename, if is is a match, the subexpression will be used to expand
+// matches re to filename, if it is a match, the subexpression will be used to expand
 // template to an origin. When match is true that origin is returned. Origin is fully qualified.
 func matches(re *regexp.Regexp, filename, template string) (match bool, origin string) {
 	base := filepath.Base(filename)

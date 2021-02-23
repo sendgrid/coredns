@@ -1,18 +1,37 @@
+// Package object holds functions that convert the objects from the k8s API in
+// to a more memory efficient structures.
+//
+// Adding new fields to any of the structures defined in pod.go, endpoint.go
+// and service.go should not be done lightly as this increases the memory use
+// and will leads to OOMs in the k8s scale test.
+//
+// We can do some optimizations here as well. We store IP addresses as strings,
+// this might be moved to uint32 (for v4) for instance, but then we need to
+// convert those again.
+//
+// Also the msg.Service use in this plugin may be deprecated at some point, as
+// we don't use most of those features anyway and would free us from the *etcd*
+// dependency, where msg.Service is defined. And should save some mem/cpu as we
+// convert to and from msg.Services.
 package object
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 )
 
-// ToFunc converts one empty interface to another.
-type ToFunc func(interface{}) interface{}
+// ToFunc converts one v1.Object to another v1.Object.
+type ToFunc func(v1.Object) (v1.Object, error)
+
+// ProcessorBuilder returns function to process cache events.
+type ProcessorBuilder func(cache.Indexer, cache.ResourceEventHandler) cache.ProcessFunc
 
 // Empty is an empty struct.
 type Empty struct{}
 
-// GetObjectKind implementss the ObjectKind interface as a noop.
+// GetObjectKind implements the ObjectKind interface as a noop.
 func (e *Empty) GetObjectKind() schema.ObjectKind { return schema.EmptyObjectKind }
 
 // GetGenerateName implements the metav1.Object interface.
@@ -69,12 +88,6 @@ func (e *Empty) GetAnnotations() map[string]string { return nil }
 // SetAnnotations implements the metav1.Object interface.
 func (e *Empty) SetAnnotations(annotations map[string]string) {}
 
-// GetInitializers implements the metav1.Object interface.
-func (e *Empty) GetInitializers() *v1.Initializers { return nil }
-
-// SetInitializers implements the metav1.Object interface.
-func (e *Empty) SetInitializers(initializers *v1.Initializers) {}
-
 // GetFinalizers implements the metav1.Object interface.
 func (e *Empty) GetFinalizers() []string { return nil }
 
@@ -92,3 +105,9 @@ func (e *Empty) GetClusterName() string { return "" }
 
 // SetClusterName implements the metav1.Object interface.
 func (e *Empty) SetClusterName(clusterName string) {}
+
+// GetManagedFields implements the metav1.Object interface.
+func (e *Empty) GetManagedFields() []v1.ManagedFieldsEntry { return nil }
+
+// SetManagedFields implements the metav1.Object interface.
+func (e *Empty) SetManagedFields(managedFields []v1.ManagedFieldsEntry) {}

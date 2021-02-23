@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/coredns/coredns/plugin"
-	mtest "github.com/coredns/coredns/plugin/metrics/test"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/test"
 
@@ -31,26 +30,26 @@ func TestMetrics(t *testing.T) {
 		// This all works because 1 bucket (1 zone, 1 type)
 		{
 			next:          test.NextHandler(dns.RcodeSuccess, nil),
-			qname:         "example.org",
-			metric:        "coredns_dns_request_count_total",
+			qname:         "example.org.",
+			metric:        "coredns_dns_requests_total",
 			expectedValue: "1",
 		},
 		{
 			next:          test.NextHandler(dns.RcodeSuccess, nil),
-			qname:         "example.org",
-			metric:        "coredns_dns_request_count_total",
+			qname:         "example.org.",
+			metric:        "coredns_dns_requests_total",
 			expectedValue: "2",
 		},
 		{
 			next:          test.NextHandler(dns.RcodeSuccess, nil),
-			qname:         "example.org",
-			metric:        "coredns_dns_request_type_count_total",
+			qname:         "example.org.",
+			metric:        "coredns_dns_requests_total",
 			expectedValue: "3",
 		},
 		{
 			next:          test.NextHandler(dns.RcodeSuccess, nil),
-			qname:         "example.org",
-			metric:        "coredns_dns_response_rcode_count_total",
+			qname:         "example.org.",
+			metric:        "coredns_dns_responses_total",
 			expectedValue: "4",
 		},
 	}
@@ -62,7 +61,7 @@ func TestMetrics(t *testing.T) {
 		if tc.qtype == 0 {
 			tc.qtype = dns.TypeA
 		}
-		req.SetQuestion(dns.Fqdn(tc.qname), tc.qtype)
+		req.SetQuestion(tc.qname, tc.qtype)
 		met.Next = tc.next
 
 		rec := dnstest.NewRecorder(&test.ResponseWriter{})
@@ -71,10 +70,10 @@ func TestMetrics(t *testing.T) {
 			t.Fatalf("Test %d: Expected no error, but got %s", i, err)
 		}
 
-		result := mtest.Scrape(t, "http://"+ListenAddr+"/metrics")
+		result := test.Scrape("http://" + ListenAddr + "/metrics")
 
 		if tc.expectedValue != "" {
-			got, _ := mtest.MetricValue(tc.metric, result)
+			got, _ := test.MetricValue(tc.metric, result)
 			if got != tc.expectedValue {
 				t.Errorf("Test %d: Expected value %s for metrics %s, but got %s", i, tc.expectedValue, tc.metric, got)
 			}

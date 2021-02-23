@@ -3,32 +3,20 @@ package autopath
 import (
 	"fmt"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
-	"github.com/coredns/coredns/plugin/metrics"
 
-	"github.com/caddyserver/caddy"
 	"github.com/miekg/dns"
 )
 
-func init() {
-	caddy.RegisterPlugin("autopath", caddy.Plugin{
-		ServerType: "dns",
-		Action:     setup,
-	})
-
-}
+func init() { plugin.Register("autopath", setup) }
 
 func setup(c *caddy.Controller) error {
 	ap, mw, err := autoPathParse(c)
 	if err != nil {
 		return plugin.Error("autopath", err)
 	}
-
-	c.OnStartup(func() error {
-		metrics.MustRegister(c, autoPathCount)
-		return nil
-	})
 
 	// Do this in OnStartup, so all plugin has been initialized.
 	c.OnStartup(func() error {

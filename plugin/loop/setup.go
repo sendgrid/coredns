@@ -6,19 +6,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
-
-	"github.com/caddyserver/caddy"
 )
 
-func init() {
-	caddy.RegisterPlugin("loop", caddy.Plugin{
-		ServerType: "dns",
-		Action:     setup,
-	})
-}
+func init() { plugin.Register("loop", setup) }
 
 func setup(c *caddy.Controller) error {
 	l, err := parse(c)
